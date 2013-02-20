@@ -1,0 +1,6 @@
+The original source was packaged from the upstream subversion
+repository: debian/rules get-orig-source
+
+Binary files in lib/* have been removed.
+
+ -- Shaun Jackman <sjackman@debian.org> 2010-06-15

@@ -1,0 +1,54 @@
+Description: Modifies the upstream build system.
+ This patch changes the path to the javac compiler, enables the use
+ of the system's testng library, and adds a new target for preparing
+ the sam and picard jar files and installing the extra R scripts
+ from src/scripts/net/sf/picard/analysis/.
+Origin: vendor
+Forwarded: no
+--- a/build.xml
++++ b/build.xml
+@@ -23,7 +23,7 @@
+   ~ THE SOFTWARE.
+   -->
+ 
+-<project name="picard-public" basedir="." default="all">
++<project name="picard-public" basedir="." default="jar">
+ 
+     <property name="src" value="src/java"/>
+     <property name="src.scripts" value="src/scripts"/>
+@@ -72,6 +72,8 @@
+             <fileset dir="${lib}">
+                 <include name="**/*.jar"/>
+             </fileset>
++            <pathelement path="/usr/share/java/testng.jar"/>
++            <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
+         </path>
+         <path  id="metrics.classpath">
+             <pathelement path="${classpath}"/>
+@@ -210,6 +212,6 @@
+         <jar destfile="${dist}/picard-${picard-version}.jar" compress="no">
+             <fileset dir="${classes}" includes ="net/sf/picard/**/*.*"/>
+-            <zipfileset src="${lib}/apache-ant-1.8.2-bzip2.jar"/>
++            <fileset dir="${src.scripts}" includes="**/*.R"/>
+             <manifest>
+                 <attribute name="Implementation-Version" value="${picard-version}(${repository.revision})"/>
+                 <attribute name="Implementation-Vendor" value="Broad Institute"/>
+@@ -217,6 +219,8 @@
+         </jar>
+     </target>
+ 
++<target name="jar" depends="sam-jar, picard-jar" />
++
+     <target name="tribble-jar" depends="compile"
+             description="Builds tribble-${tribble-version}.jar for inclusion in other projects">
+         <mkdir dir="${dist}"/>
+@@ -453,7 +457,8 @@
+                    debug="${javac.debug}"
+                    srcdir="${src.test.java}"
+                    includes="@{includes}"
+-                   excludes="@{excludes}">
++                   excludes="@{excludes}"
++                   executable="javac">
+                 <classpath>
+                     <path refid="classpath"/>
+                     <pathelement location="${classes}"/>

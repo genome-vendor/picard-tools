@@ -1,0 +1,31 @@
+#!/usr/bin/make -f
+
+export DH_OPTIONS
+
+%:
+	dh  $@
+
+override_dh_auto_build:
+	dh_auto_build -- -Dant.build.javac.source=1.5 -Dant.build.javac.target=1.5
+
+override_dh_auto_configure:
+	[ -d lib ] || mkdir lib # This empty directory is lost in the packages's Git clone.
+	dh_auto_configure
+
+# Adapted from http://wiki.debian.org/SandroTosi/Svn_get-orig-source
+PACKAGE =	gmt-picard-tools
+SRC_VERSION =	$(shell dpkg-parsechangelog | sed -ne 's/^Version: \(\([0-9]\+\):\)\?\(.*\)-.*/\3/p')
+SRC_DIR =	$(PACKAGE)-$(SRC_VERSION).orig
+TARBALL =	$(PACKAGE)_$(SRC_VERSION).orig.tar.bz2
+SVN_REPOS =	http://svn.code.sf.net/p/picard/code
+.PHONY: get-orig-source
+get-orig-source:
+	rm -rf get-orig-source $(TARBALL)
+	mkdir get-orig-source
+	svn export $(SVN_REVISION) $(SVN_REPOS)/tags/$(SRC_VERSION) get-orig-source/$(SRC_DIR)
+	# Removing convenience binary jar files.
+	rm -r get-orig-source/$(SRC_DIR)/lib/*
+	BZIP2='--best' tar cjf $(TARBALL) -C get-orig-source $(SRC_DIR)
+	rm -r get-orig-source
+	@echo "  "$(TARBALL)" created; move it to the right destination to build the package"
+

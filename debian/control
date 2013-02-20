@@ -1,0 +1,36 @@
+Source: gmt-picard-tools
+Section: science
+Priority: optional
+Maintainer: The Genome Institute <gmt@genome.wustl.edu>
+Uploaders: Thomas Mooney <tmooney@genome.wustl.edu>
+Build-Depends: ant, default-jdk, libsnappy1.0.3-java, testng, debhelper (>= 7.0.50~)
+Standards-Version: 3.9.3
+Homepage: http://picard.sourceforge.net/
+Vcs-Git: git://github.com/genome-vendor/picard-tools.git
+Vcs-Browser: https://github.com/genome-vendor/picard-tools
+
+Package: gmt-picard-tools
+Architecture: all
+Depends: default-jre | java6-runtime, ${misc:Depends},
+ ${python:Depends}, ant
+Recommends: libsnappy1.0.3-java
+Suggests: python, r-base-core
+Conflicts: picard-tools
+Description: Command line tools to manipulate SAM and BAM files
+ SAM (Sequence Alignment/Map) format is a generic format for storing
+ large nucleotide sequence alignments. Picard Tools includes these
+ utilities to manipulate SAM and BAM files:
+ BamToBfq                        IlluminaBasecallsToSam
+ BuildBamIndex                   MarkDuplicates
+ CalculateHsMetrics              MeanQualityByCycle
+ CleanSam                        MergeBamAlignment
+ CollectAlignmentSummaryMetrics  MergeSamFiles
+ CollectGcBiasMetrics            NormalizeFasta
+ CollectInsertSizeMetrics        QualityScoreDistribution
+ CollectRnaSeqMetrics            ReplaceSamHeader
+ CompareSAMs                     RevertSam
+ CreateSequenceDictionary        SamFormatConverter
+ ExtractIlluminaBarcodes         SamToFastq
+ EstimateLibraryComplexity       SortSam
+ FastqToSam                      ValidateSamFile
+ FixMateInformation              ViewSam

@@ -1,0 +1,8 @@
+The Python script ‘explain_sam_flags.py’ is distributed in
+‘/usr/share/picard-tools/’ as a convenience for the users, but
+the package does not depend on it. You can install the default
+Python version in Debian with the following command:
+
+apt-get install python
+
+ -- Charles Plessy <plessy@debian.org>  Tue, 06 Jul 2010 16:29:56 +0900
