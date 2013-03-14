@@ -7,25 +7,28 @@ Origin: vendor
 Forwarded: no
 --- a/build.xml
 +++ b/build.xml
-@@ -23,7 +23,7 @@
-   ~ THE SOFTWARE.
-   -->
+@@ -51,7 +51,7 @@
+     <property name="command_tmp" value=".command_tmp"/>
+     <property name="command-line-html-dir" value="${dist}/html"/>
+     <property name="testng.verbosity" value="2"/>
+-    <property name="contracts.jar" value="${lib}/cofoja-1.0-r139.jar"/>
++    <property name="contracts.jar" value="/usr/share/java/cofoja.jar"/>
  
--<project name="picard-public" basedir="." default="all">
-+<project name="picard-public" basedir="." default="jar">
+     <property environment="env"/>
  
-     <property name="src" value="src/java"/>
-     <property name="src.scripts" value="src/scripts"/>
-@@ -72,6 +72,8 @@
+@@ -72,6 +72,11 @@
              <fileset dir="${lib}">
                  <include name="**/*.jar"/>
              </fileset>
 +            <pathelement path="/usr/share/java/testng.jar"/>
 +            <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
++            <pathelement path="/usr/share/java/cofoja.jar"/>
++            <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
++            <pathelement path="/usr/share/java/commons-jexl2.jar"/>
          </path>
          <path  id="metrics.classpath">
              <pathelement path="${classpath}"/>
-@@ -210,6 +212,6 @@
+@@ -210,6 +214,6 @@
          <jar destfile="${dist}/picard-${picard-version}.jar" compress="no">
              <fileset dir="${classes}" includes ="net/sf/picard/**/*.*"/>
 -            <zipfileset src="${lib}/apache-ant-1.8.2-bzip2.jar"/>
@@ -33,7 +36,7 @@ Forwarded: no
              <manifest>
                  <attribute name="Implementation-Version" value="${picard-version}(${repository.revision})"/>
                  <attribute name="Implementation-Vendor" value="Broad Institute"/>
-@@ -217,6 +219,8 @@
+@@ -217,6 +221,8 @@
          </jar>
      </target>
  
@@ -42,7 +45,7 @@ Forwarded: no
      <target name="tribble-jar" depends="compile"
              description="Builds tribble-${tribble-version}.jar for inclusion in other projects">
          <mkdir dir="${dist}"/>
-@@ -453,7 +457,8 @@
+@@ -453,7 +459,8 @@
                     debug="${javac.debug}"
                     srcdir="${src.test.java}"
                     includes="@{includes}"

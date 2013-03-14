@@ -1,18 +1,18 @@
-Source: gmt-picard-tools
+Source: libpicard-tools1.85-java
 Section: science
 Priority: optional
 Maintainer: The Genome Institute <gmt@genome.wustl.edu>
 Uploaders: Thomas Mooney <tmooney@genome.wustl.edu>
-Build-Depends: ant, default-jdk, libsnappy1.0.3-java, testng, debhelper (>= 7.0.50~)
+Build-Depends: ant, default-jdk, libsnappy1.0.3-java, testng, debhelper (>= 7.0.50~), libbcel-java, libcommons-jexl2-java, libcofoja-java
 Standards-Version: 3.9.3
 Homepage: http://picard.sourceforge.net/
 Vcs-Git: git://github.com/genome-vendor/picard-tools.git
 Vcs-Browser: https://github.com/genome-vendor/picard-tools
 
-Package: gmt-picard-tools
+Package: libpicard-tools1.85-java
 Architecture: all
 Depends: default-jre | java6-runtime, ${misc:Depends},
- ${python:Depends}, ant
+ ${python:Depends}, libcommons-jexl2-java
 Recommends: libsnappy1.0.3-java
 Suggests: python, r-base-core
 Conflicts: picard-tools
