@@ -40,6 +40,7 @@ import net.sf.samtools.SAMFileWriterImpl;
 import net.sf.samtools.util.BlockCompressedOutputStream;
 import net.sf.samtools.util.BlockCompressedStreamConstants;
 import net.sf.samtools.util.IOUtil;
+import net.sf.samtools.util.zip.DeflaterFactory;
 
 /**
  * Abstract class to facilitate writing command-line programs.
@@ -89,7 +90,7 @@ public abstract class CommandLineProgram {
     @Option(doc = "Whether to create a BAM index when writing a coordinate-sorted BAM file.", common=true)
     public Boolean CREATE_INDEX = Defaults.CREATE_INDEX;
 
-    @Option(doc="Whether to create an MD5 digest for any BAM files created.  ", common=true)
+    @Option(doc="Whether to create an MD5 digest for any BAM or FASTQ files created.  ", common=true)
     public boolean CREATE_MD5_FILE = Defaults.CREATE_MD5;
 
     private final String standardUsagePreamble = CommandLineParser.getStandardUsagePreamble(getClass());
@@ -167,7 +168,8 @@ public abstract class CommandLineProgram {
                                        " on " + System.getProperty("os.name") + " " + System.getProperty("os.version") +
                                        " " + System.getProperty("os.arch") + "; " + System.getProperty("java.vm.name") +
                                        " " + System.getProperty("java.runtime.version") +
-                    "; Picard version: " + commandLineParser.getVersion());
+                                       "; Picard version: " + commandLineParser.getVersion() +
+            " " + (DeflaterFactory.usingIntelDeflater()? "IntelDeflater": "JdkDeflater"));
             }
             catch (Exception e) { /* Unpossible! */ }
         }

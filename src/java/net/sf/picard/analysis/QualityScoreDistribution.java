@@ -26,6 +26,7 @@ package net.sf.picard.analysis;
 
 import net.sf.picard.PicardException;
 import net.sf.picard.cmdline.Option;
+import net.sf.picard.cmdline.Usage;
 import net.sf.picard.io.IoUtil;
 import net.sf.picard.metrics.MetricsFile;
 import net.sf.picard.reference.ReferenceSequence;
@@ -46,16 +47,20 @@ import java.util.List;
  * @author Tim Fennell
  */
 public class QualityScoreDistribution extends SinglePassSamProgram {
-    @Option(shortName="CHART", doc="A file (with .pdf extension) to write the chart to")
+	@Usage
+	public final String USAGE = getStandardUsagePreamble() + "Program to chart " +
+			"quality score distributions in a SAM or BAM file.";
+
+    @Option(shortName="CHART", doc="A file (with .pdf extension) to write the chart to.")
     public File CHART_OUTPUT;
 
-    @Option(doc="If set to true calculate mean quality over aligned reads only")
+    @Option(doc="If set to true calculate mean quality over aligned reads only.")
     public boolean ALIGNED_READS_ONLY = false;
 
-    @Option(shortName="PF", doc="If set to true calculate mean quality over PF reads only")
+    @Option(shortName="PF", doc="If set to true calculate mean quality over PF reads only.")
     public boolean PF_READS_ONLY = false;
 
-    @Option(doc="If set to true, include quality for no-call bases in the distribution")
+    @Option(doc="If set to true, include quality for no-call bases in the distribution.")
     public boolean INCLUDE_NO_CALLS = false;
 
     private final long[] qCounts  = new long[128];
@@ -85,6 +90,7 @@ public class QualityScoreDistribution extends SinglePassSamProgram {
         final List<SAMReadGroupRecord> readGroups = header.getReadGroups();
         if (readGroups.size() == 1) {
             this.plotSubtitle = readGroups.get(0).getLibrary();
+            if (null == this.plotSubtitle) this.plotSubtitle = "";
         }
     }
 
@@ -93,7 +99,7 @@ public class QualityScoreDistribution extends SinglePassSamProgram {
         // Skip unwanted records
         if (PF_READS_ONLY && rec.getReadFailsVendorQualityCheckFlag()) return;
         if (ALIGNED_READS_ONLY && rec.getReadUnmappedFlag()) return;
-        if (rec.getNotPrimaryAlignmentFlag()) return;
+        if (rec.isSecondaryOrSupplementary()) return;
 
         final byte[] bases = rec.getReadBases();
         final byte[] quals = rec.getBaseQualities();

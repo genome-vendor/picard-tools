@@ -31,7 +31,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.*;
 
-import net.sf.picard.util.CollectionUtil.MultiMap;
+import net.sf.samtools.util.CollectionUtil.MultiMap;
 import net.sf.samtools.util.StringUtil;
 import net.sf.samtools.util.CloserUtil;
 import net.sf.picard.PicardException;
@@ -121,7 +121,7 @@ public class CommandLineParser {
      * @return
      */
     public static String getFaqLink() {
-        return "FAQ:  http://sourceforge.net/apps/mediawiki/picard/index.php?title=Main_Page";
+        return "To get help, see http://picard.sourceforge.net/index.shtml#GettingHelp";
     }
 
     /**
@@ -755,13 +755,22 @@ public class CommandLineParser {
         if (enumConstants == null && getUnderlyingType(optionDefinition.field) == Boolean.class) {
             enumConstants = TRUE_FALSE_VALUES;
         }
+
         if (enumConstants != null) {
+            final Boolean isClpEnum=enumConstants.length>0 && (enumConstants[0] instanceof ClpEnum) ;
+
             sb.append("Possible values: {");
+            if(isClpEnum) sb.append("\n");
+
             for (int i = 0; i < enumConstants.length; ++i) {
-                if (i > 0) {
+                if (i > 0 && ! isClpEnum) {
                     sb.append(", ");
                 }
                 sb.append(enumConstants[i].toString());
+
+                if(isClpEnum){
+                    sb.append(" (" + ((ClpEnum)enumConstants[i]).getHelpDoc() + ")\n");
+                }
             }
             sb.append("} ");
         }
@@ -1031,6 +1040,10 @@ public class CommandLineParser {
         return argv;
     }
 
+    public interface ClpEnum{
+        String getHelpDoc();
+    }
+
     protected static class OptionDefinition {
         final Field field;
         final String name;
@@ -1063,7 +1076,8 @@ public class CommandLineParser {
                 if( isCollection && ((Collection) defaultValue).isEmpty()) {
                     //treat empty collections the same as uninitialized primitive types
                     this.defaultValue = "null";
-                } else {
+                }
+                else {
                     //this is an intialized primitive type or a non-empty collection
                     this.defaultValue = defaultValue.toString();
                 }

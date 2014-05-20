@@ -31,22 +31,13 @@ import java.io.Closeable;
 import java.util.List;
 
 /**
- * Misc utilities for working with Illuina specific files and data
+ * Misc utilities for working with Illumina specific files and data
  *
  * @author jburke@broadinstitute.org
  */
 public class IlluminaUtil {
 
     public static final String BARCODE_DELIMITER = "-";
-
-    /**
-     * Standard Broad algorithm for creating a read name
-     * @return read name in standard Broad format, without end suffix.
-     */
-    public static String makeReadName(final String runBarcode, final int lane, final int tile, final int xCoordinate,
-                                      final int yCoordinate) {
-        return runBarcode + ":" + lane + ":" + tile + ":" + xCoordinate + ":" + yCoordinate;
-    }
 
     /**
      * Parse the tile # from the read name.
@@ -133,36 +124,41 @@ public class IlluminaUtil {
         return (byte)(qualityAsCharacter & 0xff);
     }
 
+    // Strings indented below to make these easier to compare visually.
     /** Describes adapters used on each pair of strands */
     public static enum IlluminaAdapterPair implements AdapterPair {
 
-        PAIRED_END("AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT",  //58 bases)
-                   "AGATCGGAAGAGCGGTTCAGCAGGAATGCCGAGACCGATCTCGTATGCCGTCTTCTGCTTG"), // 61 bases
+        PAIRED_END(            "AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT",  //58 bases)
+                         "AGATCGGAAGAGCGGTTCAGCAGGAATGCCGAGACCGATCTCGTATGCCGTCTTCTGCTTG"), // 61 bases
 
-        INDEXED ("AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT",
-                 "AGATCGGAAGAGCACACGTCTGAACTCCAGTCACNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG"), // note  8 N's  // 67 bases
+        INDEXED (              "AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT",
+                    "AGATCGGAAGAGCACACGTCTGAACTCCAGTCACNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG"), // note  8 N's  // 67 bases
 
-        SINGLE_END ("AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT",
-                    "AGATCGGAAGAGCTCGTATGCCGTCTTCTGCTTG"),
+        SINGLE_END (           "AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT",
+                                                    "AGATCGGAAGAGCTCGTATGCCGTCTTCTGCTTG"),
 
+        NEXTERA_V1(            "AATGATACGGCGACCACCGAGATCTACACGCCTCCCTCGCGCCATCAGAGATGTGTATAAGAGACAG",
+          "CTGTCTCTTATACACATCTCTGAGCGGGCTGGCAAGGCAGACCGNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG"),
+
+        NEXTERA_V2(            "AATGATACGGCGACCACCGAGATCTACACNNNNNNNNTCGTCGGCAGCGTCAGATGTGTATAAGAGACAG",
+                    "CTGTCTCTTATACACATCTCCGAGCCCACGAGACNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG"),
+
+        DUAL_INDEXED(          "AATGATACGGCGACCACCGAGATCTNNNNNNNNACACTCTTTCCCTACACGACGCTCTTCCGATCT",
+                    "AGATCGGAAGAGCACACGTCTGAACTCCAGTCACNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG"),
+
+        FLUIDIGM(              "AATGATACGGCGACCACCGAGATCTACACTGACGACATGGTTCTACA",
+                              "AGACCAAGTCTCTGCTACCGTANNNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG"),
+
+        TRUSEQ_SMALLRNA(       "AATGATACGGCGACCACCGAGATCTACACGTTCAGAGTTCTACAGTCCGACGATC",
+                       "TGGAATTCTCGGGTGCCAAGGAACTCCAGTCACNNNNNNATCTCGTATGCCGTCTTCTGCTTG"),
+
+        // This one is at the end of the list because its 3' is a subset of several of the 3's above.
+        // There are unit tests that try all AdapterPairs, and this one should go at the end os
+        // it is checked last.
         ALTERNATIVE_SINGLE_END("AATGATACGGCGACCACCGACAGGTTCAGAGTTCTACAGTCCGACGATC",
-                          "TCGTATGCCGTCTTCTGCTTG"),
+                                       "TCGTATGCCGTCTTCTGCTTG"),
 
-        NEXTERA_V1("AATGATACGGCGACCACCGAGATCTACACGCCTCCCTCGCGCCATCAGAGATGTGTATAAGAGACAG",
-                   "CTGTCTCTTATACACATCTCTGAGCGGGCTGGCAAGGCAGACCGNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG"),
-
-        NEXTERA_V2("AATGATACGGCGACCACCGAGATCTACACNNNNNNNNTCGTCGGCAGCGTCAGATGTGTATAAGAGACAG",
-                   "CTGTCTCTTATACACATCTCCGAGCCCACGAGACNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG"),
-
-        DUAL_INDEXED("AATGATACGGCGACCACCGAGATCTNNNNNNNNACACTCTTTCCCTACACGACGCTCTTCCGATCT",
-                     "AGATCGGAAGAGCACACGTCTGAACTCCAGTCACNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG"),
-
-        FLUIDIGM("AATGATACGGCGACCACCGAGATCTACACTGACGACATGGTTCTACA",
-                 "AGACCAAGTCTCTGCTACCGTANNNNNNNNNNATCTCGTATGCCGTCTTCTGCTTG"),
-
-        TRUSEQ_SMALLRNA("AATGATACGGCGACCACCGAGATCTACACGTTCAGAGTTCTACAGTCCGACGATC",
-                        "TGGAATTCTCGGGTGCCAAGGAACTCCAGTCACNNNNNNATCTCGTATGCCGTCTTCTGCTTG")
-        ;
+                ;
 
         final String fivePrime, threePrime, fivePrimeReadOrder;
         final byte[]  fivePrimeBytes, threePrimeBytes, fivePrimeReadOrderBytes;

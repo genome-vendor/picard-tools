@@ -23,6 +23,8 @@
  */
 package net.sf.samtools.util;
 
+import net.sf.samtools.Defaults;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -34,6 +36,8 @@ import java.nio.charset.Charset;
  * than AsciiLineReaderImpl.  If you use AsciiLineReader rather than this class, it will detect the OS
  * and delegate to the preferred implementation.
  *
+ * TODO: Replace this with {@link java.io.LineNumberReader}?
+ * 
  * @author alecw@broadinstitute.org
  */
 public class BufferedLineReader implements LineReader {
@@ -43,7 +47,7 @@ public class BufferedLineReader implements LineReader {
     private String peekedLine;
 
     public BufferedLineReader(final InputStream is) {
-        this(is, IOUtil.STANDARD_BUFFER_SIZE);
+        this(is, Defaults.NON_ZERO_BUFFER_SIZE);
     }
 
     public BufferedLineReader(final InputStream is, final int bufferSize) {

@@ -30,8 +30,6 @@ import org.testng.annotations.Test;
 
 import java.io.File;
 
-import net.sf.samtools.*;
-
 /**
  * Test that BAM writing doesn't blow up.  For presorted writing, the resulting BAM file is read and contents are
  * compared with the original SAM file. 
@@ -56,7 +54,7 @@ public class BAMFileWriterTest {
      */
     private void testHelper(final SAMRecordSetBuilder samRecordSetBuilder, final SAMFileHeader.SortOrder sortOrder, final boolean presorted) throws Exception {
         SAMFileReader samReader = samRecordSetBuilder.getSamReader();
-        final File bamFile = File.createTempFile("test.", ".bam");
+        final File bamFile = File.createTempFile("test.", BamFileIoUtils.BAM_FILE_EXTENSION);
         bamFile.deleteOnExit();
         samReader.getFileHeader().setSortOrder(sortOrder);
         final SAMFileWriter bamWriter = new SAMFileWriterFactory().makeSAMOrBAMWriter(samReader.getFileHeader(), presorted, bamFile);

@@ -17,16 +17,20 @@
  */
 package org.broad.tribble.readers;
 
+import net.sf.samtools.util.LocationAware;
 import org.broad.tribble.TribbleException;
 
 import java.io.*;
 
 /**
- * A simple class that provides readLine() functionality around a PositionalBufferedStream
+ * A simple class that provides {@link #readLine()} functionality around a PositionalBufferedStream
  *
+ * {@link BufferedReader} and its {@link java.io.BufferedReader#readLine()} method should be used in preference to this class (when the
+ * {@link net.sf.samtools.util.LocationAware} functionality is not required) because it offers greater performance.
+ * 
  * @author jrobinso
  */
-public class AsciiLineReader implements LineReader {
+public class AsciiLineReader implements LineReader, LocationAware {
     private static final int BUFFER_OVERFLOW_INCREASE_FACTOR = 2;
     private static final byte LINEFEED = (byte) ('\n' & 0xff);
     private static final byte CARRIAGE_RETURN = (byte) ('\r' & 0xff);
@@ -34,21 +38,20 @@ public class AsciiLineReader implements LineReader {
     PositionalBufferedStream is;
     char[] lineBuffer;
 
-    public AsciiLineReader() {
-        this(null);
-    }
-
-    public AsciiLineReader(InputStream is){
+    public AsciiLineReader(final InputStream is){
         this(new PositionalBufferedStream(is));
     }
 
-    public AsciiLineReader(PositionalBufferedStream is) {
+    public AsciiLineReader(final PositionalBufferedStream is) {
         this.is = is;
         // Allocate this only once, even though it is essentially a local variable of
         // readLine.  This makes a huge difference in performance
         lineBuffer = new char[10000];
     }
 
+    /**
+     * @return The position of the InputStream
+     */
     public long getPosition(){
         if(is == null){
             throw new TribbleException("getPosition() called but no default stream was provided to the class on creation");
@@ -65,7 +68,7 @@ public class AsciiLineReader implements LineReader {
      * @return A String containing the contents of the line or null if the
      *         end of the stream has been reached
      */
-    public final String readLine(final PositionalBufferedStream stream) throws IOException {
+    public final String readLine(final PositionalBufferedStream stream) throws IOException{
         int linePosition = 0;
 
         while (true) {
@@ -92,7 +95,7 @@ public class AsciiLineReader implements LineReader {
                 // for potential line-terminators in return string
 
                 if (linePosition > (lineBuffer.length - 3)) {
-                    char[] temp = new char[BUFFER_OVERFLOW_INCREASE_FACTOR * lineBuffer.length];
+                    final char[] temp = new char[BUFFER_OVERFLOW_INCREASE_FACTOR * lineBuffer.length];
                     System.arraycopy(lineBuffer, 0, temp, 0, lineBuffer.length);
                     lineBuffer = temp;
                 }
@@ -103,12 +106,11 @@ public class AsciiLineReader implements LineReader {
     }
 
     /**
-     * Same as readLine(stream) but uses the stream provided in the constructure
+     * Same as {@link #readLine(PositionalBufferedStream)} but uses the stream provided in the constructor
      *
      * @return
-     * @throws IOException
      */
-    public final String readLine() throws IOException {
+    public final String readLine() throws IOException{
         if ( is == null ){
             throw new TribbleException("readLine() called without an explicit stream argument but no default stream was provided to the class on creation");
         }
@@ -121,8 +123,8 @@ public class AsciiLineReader implements LineReader {
         lineBuffer = null;
     }
 
-    public static void main(String[] args) throws Exception {
-        File testFile = new File(args[0]);
+    public static void main(final String[] args) throws Exception {
+        final File testFile = new File(args[0]);
         final int iterations = Integer.valueOf(args[1]);
         final boolean includeBufferedReader = Boolean.valueOf(args[2]);
         long t0, lineCount, dt;
@@ -131,7 +133,7 @@ public class AsciiLineReader implements LineReader {
         System.out.printf("Testing %s%n", args[0]);
         for (int i = 0; i < iterations; i++) {
             if ( includeBufferedReader ) {
-                BufferedReader reader2 = new BufferedReader(new FileReader(testFile));
+                final BufferedReader reader2 = new BufferedReader(new FileReader(testFile));
                 t0 = System.currentTimeMillis();
                 lineCount = 0;
                 while (reader2.readLine() != null) {
@@ -143,8 +145,21 @@ public class AsciiLineReader implements LineReader {
                 reader2.close();
             }
 
-            PositionalBufferedStream pbs = new PositionalBufferedStream(new FileInputStream(testFile));
-            LineReader reader = new AsciiLineReader(pbs);
+            if ( includeBufferedReader ) {
+                final LongLineBufferedReader longLineBufferedReader = new LongLineBufferedReader(new BufferedReader(new FileReader(testFile)));
+                t0 = System.currentTimeMillis();
+                lineCount = 0;
+                while (longLineBufferedReader.readLine() != null) {
+                    lineCount++;
+                }
+                dt = System.currentTimeMillis() - t0;
+                rate = ((double) lineCount) / dt;
+                printStatus("BufferedReader", lineCount, rate, dt);
+                longLineBufferedReader.close();
+            }
+            
+            final PositionalBufferedStream pbs = new PositionalBufferedStream(new FileInputStream(testFile));
+            final LineReader reader = new AsciiLineReader(pbs);
             t0 = System.currentTimeMillis();
             lineCount = 0;
             while (reader.readLine() != null) {
@@ -157,7 +172,7 @@ public class AsciiLineReader implements LineReader {
         }
     }
 
-    private static final void printStatus(final String name, long lineCount, double rate, long dt) {
+    private static final void printStatus(final String name, final long lineCount, final double rate, final long dt) {
         System.out.printf("%30s: %d lines read.  Rate = %.2e lines per second.  DT = %d%n", name, lineCount, rate, dt);
         System.out.flush();
     }

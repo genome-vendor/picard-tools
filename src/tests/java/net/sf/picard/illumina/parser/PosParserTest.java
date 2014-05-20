@@ -6,7 +6,7 @@ import org.testng.annotations.Test;
 
 import java.io.File;
 import java.util.*;
-import static net.sf.picard.util.CollectionUtil.makeList;
+import static net.sf.samtools.util.CollectionUtil.makeList;
 
 public class PosParserTest {
 
@@ -157,9 +157,10 @@ public class PosParserTest {
         }
 
         Assert.assertFalse(parser.hasNext());
+        parser.close();
     }
 
-    @DataProvider(name = "singleTileData")
+    @DataProvider(name = "multiTileData")
     public Object [][] multiTileData() {
         return new Object[][]{
             {makeList(1,2,3),     null,    makeList(S_1_1_POS, S_1_2_POS, S_1_3_POS)},
@@ -195,5 +196,6 @@ public class PosParserTest {
         }
 
         Assert.assertFalse(parser.hasNext());
+        parser.close();
     }
 }

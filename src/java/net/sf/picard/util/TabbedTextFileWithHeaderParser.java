@@ -53,7 +53,9 @@ public class TabbedTextFileWithHeaderParser implements Iterable<TabbedTextFileWi
         }
 
         public String getField(final String columnLabel) {
-            return fields[columnLabelIndices.get(columnLabel)];
+            final Integer key = columnLabelIndices.get(columnLabel);
+            if (key == null) throw new NoSuchElementException(String.format("column %s in %s", columnLabel, parser.getFileName()));
+            return fields[key];
         }
 
         public Integer getIntegerField(final String columnLabel) {
@@ -64,7 +66,6 @@ public class TabbedTextFileWithHeaderParser implements Iterable<TabbedTextFileWi
         public String getCurrentLine() {
             return this.currentLine;
         }
-
     }
 
     class TheIterator implements CloseableIterator<Row> {

@@ -49,13 +49,18 @@ import java.util.List;
  * @author Tim Fennell
  */
 public class MeanQualityByCycle extends SinglePassSamProgram {
-    @Option(shortName="CHART", doc="A file (with .pdf extension) to write the chart to")
+
+	public final String USAGE = getStandardUsagePreamble() + "Program to generate a data table and chart of " +
+			"mean quality by cycle from a SAM or BAM file.  Works best on a single lane/run of data, but can be applied to" +
+			"merged BAMs.";
+
+	@Option(shortName="CHART", doc="A file (with .pdf extension) to write the chart to.")
     public File CHART_OUTPUT;
 
-    @Option(doc="If set to true calculate mean quality over aligned reads only")
+    @Option(doc="If set to true, calculate mean quality over aligned reads only.")
     public boolean ALIGNED_READS_ONLY = false;
 
-    @Option(doc="If set to true calculate mean quality over PF reads only")
+    @Option(doc="If set to true calculate mean quality over PF reads only.")
     public boolean PF_READS_ONLY = false;
 
     private HistogramGenerator q  = new HistogramGenerator(false);
@@ -132,10 +137,9 @@ public class MeanQualityByCycle extends SinglePassSamProgram {
             }
 
             for (int i=0; i< secondReadTotalsByCycle.length; ++i) {
-                final int cycle = firstReadLength + i;
-
                 if (secondReadCountsByCycle[i] > 0) {
-                    meanQualities.increment(cycle, secondReadTotalsByCycle[i] / firstReadCountsByCycle[i]);
+                    final int cycle = firstReadLength + i;
+                    meanQualities.increment(cycle, secondReadTotalsByCycle[i] / secondReadCountsByCycle[i]);
                 }
             }
 
@@ -156,6 +160,7 @@ public class MeanQualityByCycle extends SinglePassSamProgram {
         final List<SAMReadGroupRecord> readGroups = header.getReadGroups();
         if (readGroups.size() == 1) {
             this.plotSubtitle = readGroups.get(0).getLibrary();
+            if (null == this.plotSubtitle) this.plotSubtitle = "";
         }
     }
 
@@ -164,7 +169,7 @@ public class MeanQualityByCycle extends SinglePassSamProgram {
         // Skip unwanted records
         if (PF_READS_ONLY && rec.getReadFailsVendorQualityCheckFlag()) return;
         if (ALIGNED_READS_ONLY && rec.getReadUnmappedFlag()) return;
-        if (rec.getNotPrimaryAlignmentFlag()) return;
+        if (rec.isSecondaryOrSupplementary()) return;
 
         q.addRecord(rec);
         oq.addRecord(rec);

@@ -25,7 +25,7 @@
 package net.sf.picard.analysis;
 
 import net.sf.picard.reference.ReferenceSequence;
-import net.sf.picard.util.CollectionUtil;
+import net.sf.samtools.util.CollectionUtil;
 import net.sf.picard.cmdline.Option;
 import net.sf.picard.cmdline.Usage;
 import net.sf.picard.io.IoUtil;
@@ -64,12 +64,13 @@ public class CollectAlignmentSummaryMetrics extends SinglePassSamProgram {
 
     // Usage and parameters
     @Usage
-    public String USAGE = "Reads a SAM or BAM file and writes a file containing summary alignment metrics.\n";
+    public String USAGE = getStandardUsagePreamble() + "Reads a SAM or BAM file and writes a file containing summary alignment metrics.\n";
 
     @Option(doc="Paired end reads above this insert size will be considered chimeric along with inter-chromosomal pairs.")
     public int MAX_INSERT_SIZE = 100000;
 
-    @Option() public List<String> ADAPTER_SEQUENCE = CollectionUtil.makeList(
+    @Option(doc="List of adapter sequences to use when processing the alignment metrics")
+	public List<String> ADAPTER_SEQUENCE = CollectionUtil.makeList(
         IlluminaUtil.IlluminaAdapterPair.SINGLE_END.get5PrimeAdapter(),
         IlluminaUtil.IlluminaAdapterPair.SINGLE_END.get3PrimeAdapter(),
         IlluminaUtil.IlluminaAdapterPair.PAIRED_END.get5PrimeAdapter(),

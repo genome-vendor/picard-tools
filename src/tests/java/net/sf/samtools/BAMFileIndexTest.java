@@ -25,15 +25,16 @@ package net.sf.samtools;
 
 import net.sf.samtools.util.CloseableIterator;
 import net.sf.samtools.util.StopWatch;
+import net.sf.samtools.util.StringUtil;
 import org.testng.Assert;
 import static org.testng.Assert.*;
+
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 /**
  * Test BAM file indexing.
@@ -70,7 +71,7 @@ public class BAMFileIndexTest
         assertEquals(runQueryTest(BAM_FILE, "chrM", 10400, 10600, false), 2);
     }
 
-    @Test(enabled = false)
+    @Test(groups = {"slow"})
     public void testRandomQueries()
         throws Exception {
         runRandomTest(BAM_FILE, 1000, new Random());
@@ -112,9 +113,7 @@ public class BAMFileIndexTest
         final StopWatch linearScan = new StopWatch();
         final StopWatch queryUnmapped = new StopWatch();
         int unmappedCountFromLinearScan = 0;
-        final File bamFile =
-                BAM_FILE;
-                //new File("/Users/alecw/tmp/30ED6AAXX.1.aligned.duplicates_marked.bam");
+        final File bamFile = BAM_FILE;
         final SAMFileReader reader = new SAMFileReader(bamFile);
         linearScan.start();
         CloseableIterator<SAMRecord> it = reader.iterator();
@@ -194,10 +193,10 @@ public class BAMFileIndexTest
         Assert.assertEquals(originalRec, rec);
 
         // Both ends mapped
-        CloseableIterator<SAMRecord> it = reader.queryUnmapped();
+        final CloseableIterator<SAMRecord> it = reader.queryUnmapped();
         rec = null;
         while (it.hasNext()) {
-            SAMRecord next = it.next();
+            final SAMRecord next = it.next();
             if (next.getReadName().equals("2615")) {
                 rec = next;
                 break;
@@ -215,14 +214,95 @@ public class BAMFileIndexTest
         Assert.assertNotNull(mate);
         Assert.assertEquals(mate.getReadName(), rec.getReadName());
         Assert.assertEquals(mate.getReferenceIndex(), rec.getMateReferenceIndex());
+        if (SAMUtils.getMateCigarString(rec) != null) {
+            Assert.assertEquals(mate.getCigarString(), SAMUtils.getMateCigarString(rec));
+        }
         Assert.assertEquals(mate.getAlignmentStart(), rec.getMateAlignmentStart());
         Assert.assertFalse(mate.getFirstOfPairFlag() == rec.getFirstOfPairFlag());
     }
 
+    /**
+     * Compare the results of a multi-interval query versus the union of the results from each interval done
+     * separately.
+     */
+    @Test(dataProvider = "testMultiIntervalQueryDataProvider")
+    public void testMultiIntervalQuery(final boolean contained) {
+        final List<String> referenceNames = getReferenceNames(BAM_FILE);
+
+        final SAMFileReader.QueryInterval[] intervals = generateRandomIntervals(referenceNames.size(), 1000, new Random());
+        final Set<SAMRecord> multiIntervalRecords = new HashSet<SAMRecord>();
+        final Set<SAMRecord> singleIntervalRecords = new HashSet<SAMRecord>();
+        final SAMFileReader reader = new SAMFileReader(BAM_FILE);
+        for (final SAMFileReader.QueryInterval interval : intervals) {
+            consumeAll(singleIntervalRecords, reader.query(referenceNames.get(interval.referenceIndex), interval.start, interval.end, contained));
+        }
+
+        final SAMFileReader.QueryInterval[] optimizedIntervals = SAMFileReader.QueryInterval.optimizeIntervals(intervals);
+        consumeAll(multiIntervalRecords, reader.query(optimizedIntervals, contained));
+        final Iterator<SAMRecord> singleIntervalRecordIterator = singleIntervalRecords.iterator();
+        boolean failed = false;
+        while (singleIntervalRecordIterator.hasNext()) {
+            final SAMRecord record = singleIntervalRecordIterator.next();
+            if (!multiIntervalRecords.remove(record)) {
+                System.out.println("SingleIntervalQuery found " + record + " but MultiIntervalQuery did not");
+                failed = true;
+            }
+        }
+        for (final SAMRecord record : multiIntervalRecords) {
+            System.out.println("MultiIntervalQuery found " + record + " but SingleIntervalQuery did not");
+            failed = true;
+        }
+        Assert.assertFalse(failed);
+    }
+
+    @DataProvider(name = "testMultiIntervalQueryDataProvider")
+    private Object[][] testMultiIntervalQueryDataProvider() {
+        return new Object[][]{{true}, {false}};
+    }
+
+    @Test
+    public void testUnmappedMateWithCoordinate() throws Exception {
+        // TODO: Use SAMRecordSetBuilder when it is able to create a pair with one end unmapped
+        final String samText = "@HD\tVN:1.0\tSO:coordinate\n" +
+                "@SQ\tSN:chr1\tLN:101\n" +
+                "@SQ\tSN:chr2\tLN:101\n" +
+                "@SQ\tSN:chr3\tLN:101\n" +
+                "@SQ\tSN:chr4\tLN:101\n" +
+                "@SQ\tSN:chr5\tLN:101\n" +
+                "@SQ\tSN:chr6\tLN:101\n" +
+                "@SQ\tSN:chr7\tLN:404\n" +
+                "@SQ\tSN:chr8\tLN:202\n" +
+                "@RG\tID:0\tSM:Hi,Mom!\n" +
+                "@PG\tID:1\tPN:Hey!\tVN:2.0\n" +
+                "one_end_mapped\t73\tchr7\t100\t255\t101M\t*\t0\t0\tCAACAGAAGCNGGNATCTGTGTTTGTGTTTCGGATTTCCTGCTGAANNGNTTNTCGNNTCNNNNNNNNATCCCGATTTCNTTCCGCAGCTNACCTCCCAAN\t)'.*.+2,))&&'&*/)-&*-)&.-)&)&),/-&&..)./.,.).*&&,&.&&-)&&&0*&&&&&&&&/32/,01460&&/6/*0*/2/283//36868/&\tRG:Z:0\n" +
+                "one_end_mapped\t133\tchr7\t100\t0\t*\t=\t100\t0\tNCGCGGCATCNCGATTTCTTTCCGCAGCTAACCTCCCGACAGATCGGCAGCGCGTCGTGTAGGTTATTATGGTACATCTTGTCGTGCGGCNAGAGCATACA\t&/15445666651/566666553+2/14/&/555512+3/)-'/-&-'*+))*''13+3)'//++''/'))/3+&*5++)&'2+&+/*&-&&*)&-./1'1\tRG:Z:0\n";
+        final ByteArrayInputStream bis = new ByteArrayInputStream(StringUtil.stringToBytes(samText));
+        final File bamFile = File.createTempFile("BAMFileIndexTest.", BamFileIoUtils.BAM_FILE_EXTENSION);
+        bamFile.deleteOnExit();
+        final SAMFileReader textReader = new SAMFileReader(bis);
+        SAMFileWriterFactory samFileWriterFactory = new SAMFileWriterFactory();
+        samFileWriterFactory.setCreateIndex(true);
+        final SAMFileWriter writer = samFileWriterFactory.makeBAMWriter(textReader.getFileHeader(), true, bamFile);
+        for (final SAMRecord rec : textReader) {
+            writer.addAlignment(rec);
+        }
+        writer.close();
+        final SAMFileReader bamReader = new SAMFileReader(bamFile);
+        Assert.assertEquals(countElements(bamReader.queryContained("chr7", 100, 100)), 1);
+        Assert.assertEquals(countElements(bamReader.queryOverlapping("chr7", 100, 100)), 2);
+    }
+
+    private <E> void consumeAll(final Collection<E> collection, final CloseableIterator<E> iterator) {
+        while (iterator.hasNext()) {
+            collection.add(iterator.next());
+        }
+        iterator.close();
+    }
+
     private SAMRecord getSingleRecordStartingAt(final SAMFileReader reader, final String sequence, final int alignmentStart) {
-        CloseableIterator<SAMRecord> it = reader.queryAlignmentStart(sequence, alignmentStart);
+        final CloseableIterator<SAMRecord> it = reader.queryAlignmentStart(sequence, alignmentStart);
         Assert.assertTrue(it.hasNext());
-        SAMRecord rec = it.next();
+        final SAMRecord rec = it.next();
         Assert.assertNotNull(rec);
         Assert.assertFalse(it.hasNext());
         it.close();
@@ -233,6 +313,7 @@ public class BAMFileIndexTest
         int num;
         for (num = 0; it.hasNext(); ++num, it.next()) {
         }
+        it.close();
         return num;
     }
 
@@ -244,24 +325,37 @@ public class BAMFileIndexTest
     }
 
     private void runRandomTest(final File bamFile, final int count, final Random generator) {
-        final int maxCoordinate = 10000000;
         final List<String> referenceNames = getReferenceNames(bamFile);
-        for (int i = 0; i < count; i++) {
-            final String refName = referenceNames.get(generator.nextInt(referenceNames.size()));
-            final int coord1 = generator.nextInt(maxCoordinate+1);
-            final int coord2 = generator.nextInt(maxCoordinate+1);
-            final int startPos = Math.min(coord1, coord2);
-            final int endPos = Math.max(coord1, coord2);
+        final SAMFileReader.QueryInterval[] intervals = generateRandomIntervals(referenceNames.size(), count, generator);
+        for (final SAMFileReader.QueryInterval interval : intervals) {
+            final String refName = referenceNames.get(interval.referenceIndex);
+            final int startPos = interval.start;
+            final int endPos = interval.end;
             System.out.println("Testing query " + refName + ":" + startPos + "-" + endPos + " ...");
             try {
                 runQueryTest(bamFile, refName, startPos, endPos, true);
                 runQueryTest(bamFile, refName, startPos, endPos, false);
-            } catch (Throwable exc) {
+            } catch (final Throwable exc) {
                 String message = "Query test failed: " + refName + ":" + startPos + "-" + endPos;
                 message += ": " + exc.getMessage();
                 throw new RuntimeException(message, exc);
             }
         }
+    }
+
+    private SAMFileReader.QueryInterval[] generateRandomIntervals(final int numReferences, final int count, final Random generator) {
+        final SAMFileReader.QueryInterval[] intervals = new SAMFileReader.QueryInterval[count];
+        final int maxCoordinate = 10000000;
+        for (int i = 0; i < count; i++) {
+            final int referenceIndex = generator.nextInt(numReferences);
+            final int coord1 = generator.nextInt(maxCoordinate+1);
+            final int coord2 = generator.nextInt(maxCoordinate+1);
+            final int startPos = Math.min(coord1, coord2);
+            final int endPos = Math.max(coord1, coord2);
+            intervals[i] = new SAMFileReader.QueryInterval(referenceIndex, startPos, endPos);
+        }
+
+        return intervals;
     }
 
     private List<String> getReferenceNames(final File bamFile) {

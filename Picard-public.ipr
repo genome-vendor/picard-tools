@@ -1,16 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="AntConfiguration">
-    <defaultAnt bundledAnt="true" />
     <buildFile url="file://$PROJECT_DIR$/build.xml">
       <additionalClassPath>
         <entry dir="file://$PROJECT_DIR$/lib/ant" />
       </additionalClassPath>
-      <antReference projectDefault="true" />
-      <customJdkName value="" />
-      <maximumHeapSize value="128" />
       <maximumStackSize value="32" />
-      <properties />
       <executeOn event="compositeTask" target="[clean,test]" presentableName="[clean,test]" />
     </buildFile>
   </component>
@@ -60,6 +55,7 @@
       <profile version="1.0" is_locked="false">
         <option name="myName" value="Project Default" />
         <option name="myLocal" value="false" />
+        <inspection_tool class="Convert2Diamond" enabled="false" level="WARNING" enabled_by_default="false" />
         <inspection_tool class="FieldMayBeFinal" enabled="true" level="WARNING" enabled_by_default="true" />
         <inspection_tool class="JavaDoc" enabled="false" level="WARNING" enabled_by_default="false">
           <option name="TOP_LEVEL_CLASS_OPTIONS">
@@ -96,6 +92,7 @@
           <option name="REPORT_VARIABLES" value="true" />
           <option name="REPORT_PARAMETERS" value="true" />
         </inspection_tool>
+        <inspection_tool class="SqlNoDataSourceInspection" enabled="false" level="WARNING" enabled_by_default="false" />
         <inspection_tool class="UnusedDeclaration" enabled="false" level="WARNING" enabled_by_default="false">
           <option name="ADD_MAINS_TO_ENTRIES" value="true" />
           <option name="ADD_APPLET_TO_ENTRIES" value="true" />
@@ -263,15 +260,52 @@
       </item>
     </group>
   </component>
+  <component name="ProjectCodeStyleSettingsManager">
+    <option name="PER_PROJECT_SETTINGS">
+      <value>
+        <option name="GENERATE_FINAL_LOCALS" value="true" />
+        <option name="GENERATE_FINAL_PARAMETERS" value="true" />
+        <option name="CLASS_COUNT_TO_USE_IMPORT_ON_DEMAND" value="999" />
+        <option name="RIGHT_MARGIN" value="140" />
+        <option name="JD_DO_NOT_WRAP_ONE_LINE_COMMENTS" value="true" />
+        <XML>
+          <option name="XML_LEGACY_SETTINGS_IMPORTED" value="true" />
+        </XML>
+        <codeStyleSettings language="JAVA">
+          <option name="KEEP_SIMPLE_METHODS_IN_ONE_LINE" value="true" />
+        </codeStyleSettings>
+      </value>
+    </option>
+    <option name="USE_PER_PROJECT_SETTINGS" value="true" />
+  </component>
   <component name="ProjectDetails">
     <option name="projectName" value="Picard-public" />
   </component>
   <component name="ProjectDictionaryState">
+    <dictionary name="jrose">
+      <words>
+        <w>ribosomal</w>
+      </words>
+    </dictionary>
     <dictionary name="mccowan">
       <words>
+        <w>bgzipped</w>
+        <w>codecs</w>
+        <w>demultiplex</w>
+        <w>demultiplexed</w>
+        <w>eamss</w>
+        <w>endian</w>
+        <w>gzipped</w>
+        <w>illumina's</w>
+        <w>indexable</w>
         <w>inferer</w>
         <w>inferrer</w>
+        <w>parsability</w>
         <w>phread</w>
+        <w>seekable</w>
+        <w>tabix</w>
+        <w>tokenizes</w>
+        <w>tribble</w>
       </words>
     </dictionary>
   </component>
@@ -280,7 +314,7 @@
   </component>
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$//Picard-public.iml" filepath="$PROJECT_DIR$//Picard-public.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Picard-public.iml" filepath="$PROJECT_DIR$/Picard-public.iml" />
     </modules>
   </component>
   <component name="ProjectResources">

@@ -23,14 +23,23 @@
  */
 package net.sf.samtools;
 
+import net.sf.samtools.util.ProgressLoggerInterface;
+
 /**
  * Interface for SAMText and BAM file writers.  Clients need not care which they write to,
  * once the object is constructed.
  */
 public interface SAMFileWriter {
-    void addAlignment(SAMRecord alignment);
+
+	void addAlignment(SAMRecord alignment);
 
     SAMFileHeader getFileHeader();
+
+	/**
+	 * Sets a ProgressLogger on this writer. This is useful when pulling, for instance, from a
+	 * SortingCollection.
+	 */
+	void setProgressLogger(final ProgressLoggerInterface progress);
 
     /**
      * Must be called to flush or file will likely be defective. 

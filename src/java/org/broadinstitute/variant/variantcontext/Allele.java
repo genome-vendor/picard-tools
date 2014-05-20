@@ -46,8 +46,8 @@ import java.util.Collection;
  * In these cases, where are the alleles?
  *
  * SNP polymorphism of C/G  -> { C , G } -> C is the reference allele
- * 1 base deletion of C     -> { C , - } -> C is the reference allele
- * 1 base insertion of A    -> { - ; A } -> Null is the reference allele
+ * 1 base deletion of C     -> { tC , t } -> C is the reference allele and we include the preceding reference base (null alleles are not allowed)
+ * 1 base insertion of A    -> { C ; CA } -> C is the reference allele (because null alleles are not allowed)
  *
  * Suppose I see a the following in the population:
  *
@@ -59,6 +59,10 @@ import java.util.Collection;
  *
  *  { C , G , - }
  *
+ *  and these are represented as:
+ *
+ *  { tC, tG, t }
+ *
  * Now suppose I have this more complex example:
  *
  * Ref: a t C g a // C is the reference base
@@ -68,12 +72,11 @@ import java.util.Collection;
  *
  * There are actually four segregating alleles:
  *
- *   { C g , - g, - -, and CAg } over bases 2-4
+ *   { Cg , -g, --, and CAg } over bases 2-4
  *
- * However, the molecular equivalence explicitly listed above is usually discarded, so the actual
- * segregating alleles are:
+ *   represented as:
  *
- *   { C g, g, -, C a g }
+ *   { tCg, tg, t, tCAg }
  *
  * Critically, it should be possible to apply an allele to a reference sequence to create the
  * correct haplotype sequence:
@@ -85,7 +88,7 @@ import java.util.Collection;
  *
  * Given list of alleles it's possible to determine the "type" of the variation
  *
- *      A / C @ loc => SNP with
+ *      A / C @ loc => SNP
  *      - / A => INDEL
  *
  * If you know where allele is the reference, you can determine whether the variant is an insertion or deletion.
@@ -144,6 +147,22 @@ public class Allele implements Comparable<Allele> {
         this(bases.getBytes(), isRef);
     }
 
+    /**
+     * Creates a new allele based on the provided one.  Ref state will be copied unless ignoreRefState is true
+     * (in which case the returned allele will be non-Ref).
+     *
+     * This method is efficient because it can skip the validation of the bases (since the original allele was already validated)
+     *
+     * @param allele  the allele from which to copy the bases
+     * @param ignoreRefState  should we ignore the reference state of the input allele and use the default ref state?
+     */
+    protected Allele(final Allele allele, final boolean ignoreRefState) {
+        this.bases = allele.bases;
+        this.isRef = ignoreRefState ? false : allele.isRef;
+        this.isNoCall = allele.isNoCall;
+        this.isSymbolic = allele.isSymbolic;
+    }
+
 
     private final static Allele REF_A = new Allele("A", true);
     private final static Allele ALT_A = new Allele("A", false);
@@ -194,7 +213,6 @@ public class Allele implements Comparable<Allele> {
     }
 
     public static Allele create(byte base, boolean isRef) {
-//    public Allele(byte base, boolean isRef) {
         return create( new byte[]{ base }, isRef);
     }
 
@@ -293,7 +311,6 @@ public class Allele implements Comparable<Allele> {
      * @param isRef  is this the reference allele?
      */
     public static Allele create(String bases, boolean isRef) {
-    //public Allele(String bases, boolean isRef) {
         return create(bases.getBytes(), isRef);
     }
 
@@ -314,7 +331,19 @@ public class Allele implements Comparable<Allele> {
      */
     public static Allele create(byte[] bases) {
         return create(bases, false);
-        //this(bases, false);
+    }
+
+    /**
+     * Creates a new allele based on the provided one.  Ref state will be copied unless ignoreRefState is true
+     * (in which case the returned allele will be non-Ref).
+     *
+     * This method is efficient because it can skip the validation of the bases (since the original allele was already validated)
+     *
+     * @param allele  the allele from which to copy the bases
+     * @param ignoreRefState  should we ignore the reference state of the input allele and use the default ref state?
+     */
+    public static Allele create(final Allele allele, final boolean ignoreRefState) {
+        return new Allele(allele, ignoreRefState);
     }
 
     // ---------------------------------------------------------------------------------------------------------

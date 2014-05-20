@@ -33,29 +33,45 @@ import java.io.*;
 
 /**
  * Reads a fastq file.
+ * WARNING: Despite the fact that this class implements Iterable, calling iterator() method does not
+ * start iteration from the beginning of the file.  Developers should probably not call iterator()
+ * directly.  It is provided so that this class can be used in Java for-each loop.
  */
 public class FastqReader implements Iterator<FastqRecord>, Iterable<FastqRecord>, Closeable {
     final private File fastqFile;
     final private BufferedReader reader;
     private FastqRecord nextRecord;
-    private int line=1; 
+    private int line=1;
+
+    final private boolean skipBlankLines;
 
     public FastqReader(final File file) {
-        try {
-            fastqFile = file;
-            reader = IoUtil.openFileForBufferedReading(fastqFile);
-            nextRecord = readNextRecord();
-        }
-        catch (IOException ioe) {
-            throw new RuntimeIOException(ioe);
-        }
+        this(file,false);
+    }
+
+    public FastqReader(final File file, final boolean skipBlankLines) {
+        this.skipBlankLines=skipBlankLines;
+        fastqFile = file;
+        reader = IoUtil.openFileForBufferedReading(fastqFile);
+        nextRecord = readNextRecord();
+    }
+
+    public FastqReader(final BufferedReader reader) {
+        this(null, reader);
+    }
+
+    public FastqReader(final File file, final BufferedReader reader) {
+        fastqFile = file;
+        this.reader = reader;
+        nextRecord = readNextRecord();
+        skipBlankLines = false;
     }
 
     private FastqRecord readNextRecord() {
         try {
 
             // Read sequence header
-            final String seqHeader = reader.readLine();
+            final String seqHeader = readLineConditionallySkippingBlanks();
             if (seqHeader == null) return null ;
             if (StringUtil.isBlank(seqHeader)) {
                 throw new PicardException(error("Missing sequence header"));
@@ -65,18 +81,18 @@ public class FastqReader implements Iterator<FastqRecord>, Iterable<FastqRecord>
             }
 
             // Read sequence line
-            final String seqLine = reader.readLine();
+            final String seqLine = readLineConditionallySkippingBlanks();
             checkLine(seqLine,"sequence line");
 
             // Read quality header
-            final String qualHeader = reader.readLine();
+            final String qualHeader = readLineConditionallySkippingBlanks();
             checkLine(qualHeader,"quality header");
             if (!qualHeader.startsWith(FastqConstants.QUALITY_HEADER)) {
                 throw new PicardException(error("Quality header must start with "+ FastqConstants.QUALITY_HEADER+": "+qualHeader));
             }
 
             // Read quality line
-            final String qualLine = reader.readLine();
+            final String qualLine = readLineConditionallySkippingBlanks();
             checkLine(qualLine,"quality line");
 
             // Check sequence and quality lines are same length
@@ -90,7 +106,7 @@ public class FastqReader implements Iterator<FastqRecord>, Iterable<FastqRecord>
             return frec ;
 
         } catch (IOException e) {
-            throw new PicardException(String.format("Error reading '%s'", fastqFile.getAbsolutePath()),e);
+            throw new PicardException(String.format("Error reading fastq '%s'", getAbsolutePath()), e);
         }
     }
 
@@ -107,16 +123,26 @@ public class FastqReader implements Iterator<FastqRecord>, Iterable<FastqRecord>
 
     public void remove() { throw new UnsupportedOperationException("Unsupported operation"); }
 
+    /**
+     * WARNING: Despite the fact that this class implements Iterable, calling iterator() method does not
+     * start iteration from the beginning of the file.  Developers should probably not call iterator()
+     * directly.  It is provided so that this class can be used in Java for-each loop.
+     */
     public Iterator<FastqRecord> iterator() { return this; }
 
     public int getLineNumber() { return line ; }
+
+
+    /**
+     * @return Name of FASTQ being read, or null if not known.
+     */
     public File getFile() { return fastqFile ; }
 
     public void close() {
         try {
             reader.close();
         } catch (IOException e) {
-            throw new PicardException("IO problem in file "+fastqFile.getAbsolutePath(),e);
+            throw new PicardException("IO problem in fastq file "+getAbsolutePath(), e);
         }
     }
 
@@ -130,6 +156,22 @@ public class FastqReader implements Iterator<FastqRecord>, Iterable<FastqRecord>
     }
 
     private String error(final String msg) {
-        return msg + " at line "+line+" in "+fastqFile.getAbsolutePath();
+        return msg + " at line "+line+" in fastq "+getAbsolutePath();
     }
+
+    private String getAbsolutePath() {
+        if (fastqFile == null) return "";
+        else return fastqFile.getAbsolutePath();
+    }
+
+    private String readLineConditionallySkippingBlanks() throws IOException {
+        String line;
+        do {
+            line = reader.readLine();
+            if (line == null) return line;
+        } while(skipBlankLines && StringUtil.isBlank(line));
+        return line;
+    }
+
+
 }

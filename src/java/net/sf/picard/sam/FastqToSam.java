@@ -108,6 +108,13 @@ public class FastqToSam extends CommandLineProgram {
     @Option(doc="Maximum quality allowed in the input fastq.  An exception will be thrown if a quality is greater than this value.")
     public int MAX_Q = SAMUtils.MAX_PHRED_SCORE;
 
+    @Option(doc="If true and this is an unpaired fastq any occurance of '/1' will be removed from the end of a read name.")
+    public Boolean STRIP_UNPAIRED_MATE_NUMBER = false;
+
+
+    @Option(doc="Allow (and ignore) empty lines")
+    public Boolean ALLOW_AND_IGNORE_EMPTY_LINES = false;
+
     private static final SolexaQualityConverter solexaQualityConverter = SolexaQualityConverter.getSingleton();
 
     /** Stock main method. */
@@ -117,23 +124,22 @@ public class FastqToSam extends CommandLineProgram {
 
     /* Simply invokes the right method for unpaired or paired data. */
     protected int doWork() {
-        if (QUALITY_FORMAT == null) {
             final QualityEncodingDetector detector = new QualityEncodingDetector();
-            final FastqReader reader = new FastqReader(FASTQ);
+            final FastqReader reader = new FastqReader(FASTQ,ALLOW_AND_IGNORE_EMPTY_LINES);
             if (FASTQ2 == null) {
                 detector.add(QualityEncodingDetector.DEFAULT_MAX_RECORDS_TO_ITERATE, reader);
             } else {
-                final FastqReader reader2 = new FastqReader(FASTQ2);       
+                final FastqReader reader2 = new FastqReader(FASTQ2,ALLOW_AND_IGNORE_EMPTY_LINES);
                 detector.add(QualityEncodingDetector.DEFAULT_MAX_RECORDS_TO_ITERATE, reader, reader2);
                 reader2.close();
             }
             reader.close();
             
-            QUALITY_FORMAT = detector.generateBestGuess(QualityEncodingDetector.FileContext.FASTQ);
+            QUALITY_FORMAT = detector.generateBestGuess(QualityEncodingDetector.FileContext.FASTQ, QUALITY_FORMAT);
             if (detector.isDeterminationAmbiguous())
                 LOG.warn("Making ambiguous determination about fastq's quality encoding; more than one format possible based on observed qualities.");
             LOG.info(String.format("Auto-detected quality format as: %s.", QUALITY_FORMAT));
-        }
+
         final int readCount = (FASTQ2 == null) ?  doUnpaired() : doPaired();
         LOG.info("Processed " + readCount + " fastq reads");
         return 0;
@@ -144,7 +150,7 @@ public class FastqToSam extends CommandLineProgram {
         IoUtil.assertFileIsReadable(FASTQ);
         IoUtil.assertFileIsWritable(OUTPUT);
         
-        final FastqReader freader = new FastqReader(FASTQ);
+        final FastqReader freader = new FastqReader(FASTQ,ALLOW_AND_IGNORE_EMPTY_LINES);
         final SAMFileHeader header = createFileHeader();
         final SAMFileWriter writer = new SAMFileWriterFactory().makeSAMOrBAMWriter(header, false, OUTPUT);
 
@@ -152,7 +158,7 @@ public class FastqToSam extends CommandLineProgram {
         final ProgressLogger progress = new ProgressLogger(LOG);
         for ( ; freader.hasNext()  ; readCount++) {
             final FastqRecord frec = freader.next();
-            final SAMRecord srec = createSamRecord(header, getReadName(frec.getReadHeader()) , frec, false) ;
+            final SAMRecord srec = createSamRecord(header, getReadName(frec.getReadHeader(), false) , frec, false) ;
             srec.setReadPairedFlag(false);
             writer.addAlignment(srec);
             progress.record(srec);
@@ -168,8 +174,8 @@ public class FastqToSam extends CommandLineProgram {
         IoUtil.assertFileIsReadable(FASTQ2);
         IoUtil.assertFileIsWritable(OUTPUT);
         
-        final FastqReader freader1 = new FastqReader(FASTQ);
-        final FastqReader freader2 = new FastqReader(FASTQ2);
+        final FastqReader freader1 = new FastqReader(FASTQ,ALLOW_AND_IGNORE_EMPTY_LINES);
+        final FastqReader freader2 = new FastqReader(FASTQ2,ALLOW_AND_IGNORE_EMPTY_LINES);
         final SAMFileHeader header = createFileHeader() ;
         final SAMFileWriter writer = (new SAMFileWriterFactory()).makeSAMOrBAMWriter(header, false, OUTPUT);
 
@@ -179,8 +185,8 @@ public class FastqToSam extends CommandLineProgram {
             final FastqRecord frec1 = freader1.next();
             final FastqRecord frec2 = freader2.next();
 
-            final String frec1Name = getReadName(frec1.getReadHeader());
-            final String frec2Name = getReadName(frec2.getReadHeader());
+            final String frec1Name = getReadName(frec1.getReadHeader(), true);
+            final String frec2Name = getReadName(frec2.getReadHeader(), true);
             final String baseName = getBaseName(frec1Name, frec2Name, freader1, freader2);
 
             final SAMRecord srec1 = createSamRecord(header, baseName, frec1, true) ;
@@ -244,7 +250,7 @@ public class FastqToSam extends CommandLineProgram {
         final SAMFileHeader header = new SAMFileHeader();
         header.addReadGroup(rgroup);
 
-        for (String comment : COMMENT) {
+        for (final String comment : COMMENT) {
             header.addComment(comment);
         }
 
@@ -252,7 +258,7 @@ public class FastqToSam extends CommandLineProgram {
         return header ;
     }
 
-    /** Based on the type of quality scores coming in, converts them to a numeric byte[] in prhred scale. */
+    /** Based on the type of quality scores coming in, converts them to a numeric byte[] in phred scale. */
     void convertQuality(final byte[] quals, final FastqQualityFormat version) {
         switch (version)  {
             case Standard:
@@ -332,9 +338,19 @@ public class FastqToSam extends CommandLineProgram {
     }
 
     // Read names cannot contain blanks
-    private String getReadName(final String fastaqHeader) {
-        final int idx = fastaqHeader.indexOf(" ");
-        return (idx == -1) ? fastaqHeader : fastaqHeader.substring(0,idx); 
+    private String getReadName(final String fastqHeader, final boolean paired) {
+        final int idx = fastqHeader.indexOf(" ");
+        String readName = (idx == -1) ? fastqHeader : fastqHeader.substring(0,idx);
+
+        // NOTE: the while loop isn't necessarily the most efficient way to handle this but we don't
+        // expect this to ever happen more than once, just trapping pathological cases
+        while (STRIP_UNPAIRED_MATE_NUMBER && !paired && readName.endsWith("/1")) {
+            // If this is an unpaired run we want to make sure that "/1" isn't tacked on the end of the read name,
+            // as this can cause problems down the road in MergeBamAlignment
+            readName = readName.substring(0, readName.length() - 2);
+        }
+
+        return readName;
     }
 
     @Override

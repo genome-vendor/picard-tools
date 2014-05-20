@@ -233,7 +233,7 @@ public class SamFileValidator {
      * records on a subsequent call).
      */
     private void validateSamRecordsAndQualityFormat(final Iterable<SAMRecord> samRecords, final SAMFileHeader header) {
-        SAMRecordIterator iter = (SAMRecordIterator) samRecords.iterator();
+        final SAMRecordIterator iter = (SAMRecordIterator) samRecords.iterator();
         final ProgressLogger progress = new ProgressLogger(log, 10000000, "Validated Read");
         final QualityEncodingDetector qualityDetector = new QualityEncodingDetector();
         try {
@@ -270,7 +270,7 @@ public class SamFileValidator {
 
             try {
                 if (progress.getCount() > 0) { // Avoid exception being thrown as a result of no qualities being read
-                    final FastqQualityFormat format = qualityDetector.generateBestGuess(QualityEncodingDetector.FileContext.SAM);
+                    final FastqQualityFormat format = qualityDetector.generateBestGuess(QualityEncodingDetector.FileContext.SAM, FastqQualityFormat.Standard);
                     if (format != FastqQualityFormat.Standard) {
                         addError(new SAMValidationError(Type.INVALID_QUALITY_FORMAT, String.format("Detected %s quality score encoding, but expected %s.", format, FastqQualityFormat.Standard), null));
                     }
@@ -292,11 +292,11 @@ public class SamFileValidator {
     }
 
     private void validateReadGroup(final SAMRecord record, final SAMFileHeader header) {
-        SAMReadGroupRecord rg = record.getReadGroup();
+        final SAMReadGroupRecord rg = record.getReadGroup();
         if (rg == null) {
             addError(new SAMValidationError(Type.RECORD_MISSING_READ_GROUP,
                     "A record is missing a read group", record.getReadName()));
-        } else if (!header.getReadGroups().contains(rg)) {
+        } else if (header.getReadGroup(rg.getId()) == null) {
             addError(new SAMValidationError(Type.READ_GROUP_NOT_FOUND,
                     "A record has a read group not found in the header: ",
                     record.getReadName() + ", " + rg.getReadGroupId()));
@@ -351,9 +351,17 @@ public class SamFileValidator {
         if (record.getReadUnmappedFlag()) {
             return true;
         }
+        return validateCigar(record, recordNumber, true);
+    }
+
+    private boolean validateMateCigar(final SAMRecord record, final long recordNumber) {
+        return validateCigar(record, recordNumber, false);
+    }
+
+    private boolean validateCigar(final SAMRecord record, final long recordNumber, final boolean isReadCigar) {
         final ValidationStringency savedStringency = record.getValidationStringency();
         record.setValidationStringency(ValidationStringency.LENIENT);
-        final List<SAMValidationError> errors = record.validateCigar(recordNumber);
+        final List<SAMValidationError> errors = isReadCigar ? record.validateCigar(recordNumber) : SAMUtils.validateMateCigar(record, recordNumber);
         record.setValidationStringency(savedStringency);
         if (errors == null) {
             return true;
@@ -365,6 +373,7 @@ public class SamFileValidator {
         }
         return valid;
     }
+
 
     private void validateSortOrder(final SAMRecord record, final long recordNumber) {
         final SAMRecord prev = orderChecker.getPreviousRecord();
@@ -426,9 +435,10 @@ public class SamFileValidator {
     }
 
     private void validateMateFields(final SAMRecord record, final long recordNumber) {
-        if (!record.getReadPairedFlag() || record.getNotPrimaryAlignmentFlag()) {
+        if (!record.getReadPairedFlag() || record.isSecondaryOrSupplementary()) {
             return;
         }
+        validateMateCigar(record, recordNumber);
 
         final PairEndInfo pairEndInfo = pairEndInfoByName.remove(record.getReferenceIndex(), record.getReadName());
         if (pairEndInfo == null) {
@@ -460,7 +470,7 @@ public class SamFileValidator {
         if (fileHeader.getReadGroups().isEmpty()) {
             addError(new SAMValidationError(Type.MISSING_READ_GROUP, "Read groups is empty", null));
         }
-        List<SAMProgramRecord> pgs = fileHeader.getProgramRecords();
+        final List<SAMProgramRecord> pgs = fileHeader.getProgramRecords();
         for (int i = 0; i < pgs.size() - 1; i++) {
             for (int j = i + 1; j < pgs.size(); j++) {
                 if (pgs.get(i).getProgramGroupId().equals(pgs.get(j).getProgramGroupId())) {
@@ -470,13 +480,23 @@ public class SamFileValidator {
             }
         }
 
-        List<SAMReadGroupRecord> rgs = fileHeader.getReadGroups();
-        for (int i = 0; i < rgs.size() - 1; i++) {
-            for (int j = i + 1; j < rgs.size(); j++) {
-                if (rgs.get(i).getReadGroupId().equals(rgs.get(j).getReadGroupId())) {
-                    addError(new SAMValidationError(Type.DUPLICATE_READ_GROUP_ID, "Duplicate " +
-                            "read group id: " + rgs.get(i).getReadGroupId(), null));
-                }
+        final List<SAMReadGroupRecord> rgs = fileHeader.getReadGroups();
+        final Set<String> readGroupIDs = new HashSet<String>();
+
+        for (final SAMReadGroupRecord record : rgs) {
+            final String readGroupID = record.getReadGroupId();
+            if (readGroupIDs.contains(readGroupID)) {
+                addError(new SAMValidationError(Type.DUPLICATE_READ_GROUP_ID, "Duplicate " +
+                        "read group id: " + readGroupID, null));
+            } else {
+                readGroupIDs.add(readGroupID);
+            }
+
+            final String platformValue = record.getPlatform();
+            if (platformValue == null || "".equals(platformValue)) {
+                addError(new SAMValidationError(Type.MISSING_PLATFORM_VALUE,
+                        "A platform (PL) attribute was not found for read group ",
+                        readGroupID));
             }
         }
 
@@ -536,11 +556,13 @@ public class SamFileValidator {
         private final int readReferenceIndex;
         private final boolean readNegStrandFlag;
         private final boolean readUnmappedFlag;
+        private final String readCigarString;
 
         private final int mateAlignmentStart;
         private final int mateReferenceIndex;
         private final boolean mateNegStrandFlag;
         private final boolean mateUnmappedFlag;
+        private final String mateCigarString;
 
         private final boolean firstOfPairFlag;
 
@@ -553,26 +575,33 @@ public class SamFileValidator {
             this.readNegStrandFlag = record.getReadNegativeStrandFlag();
             this.readReferenceIndex = record.getReferenceIndex();
             this.readUnmappedFlag = record.getReadUnmappedFlag();
+            this.readCigarString = record.getCigarString();
 
             this.mateAlignmentStart = record.getMateAlignmentStart();
             this.mateNegStrandFlag = record.getMateNegativeStrandFlag();
             this.mateReferenceIndex = record.getMateReferenceIndex();
             this.mateUnmappedFlag = record.getMateUnmappedFlag();
+            final Object mcs = record.getAttribute(SAMTag.MC.name());
+            this.mateCigarString = (mcs != null) ? (String) mcs : null;
 
             this.firstOfPairFlag = record.getFirstOfPairFlag();
         }
 
         private PairEndInfo(int readAlignmentStart, int readReferenceIndex, boolean readNegStrandFlag, boolean readUnmappedFlag,
+                            String readCigarString,
                             int mateAlignmentStart, int mateReferenceIndex, boolean mateNegStrandFlag, boolean mateUnmappedFlag,
+                            String mateCigarString,
                             boolean firstOfPairFlag, long recordNumber) {
             this.readAlignmentStart = readAlignmentStart;
             this.readReferenceIndex = readReferenceIndex;
             this.readNegStrandFlag = readNegStrandFlag;
             this.readUnmappedFlag = readUnmappedFlag;
+            this.readCigarString = readCigarString;
             this.mateAlignmentStart = mateAlignmentStart;
             this.mateReferenceIndex = mateReferenceIndex;
             this.mateNegStrandFlag = mateNegStrandFlag;
             this.mateUnmappedFlag = mateUnmappedFlag;
+            this.mateCigarString = mateCigarString;
             this.firstOfPairFlag = firstOfPairFlag;
             this.recordNumber = recordNumber;
         }
@@ -623,6 +652,15 @@ public class SamFileValidator {
                         readName,
                         end1.recordNumber));
             }
+            if ((end1.mateCigarString != null) && (!end1.mateCigarString.equals(end2.readCigarString))) {
+                errors.add(new SAMValidationError(
+                        Type.MISMATCH_MATE_CIGAR_STRING,
+                        "Mate CIGAR string does not match CIGAR string of mate",
+                        readName,
+                        end1.recordNumber));
+            }
+            // Note - don't need to validate that the mateCigarString is a valid cigar string, since this
+            // will be validated by validateCigar on the mate's record itself.
         }
     }
 
@@ -671,17 +709,20 @@ public class SamFileValidator {
                 this.in = new DataInputStream(is);
             }
 
-            public void encode(String key, PairEndInfo record) {
+            public void encode(final String key, final PairEndInfo record) {
                 try {
                     out.writeUTF(key);
                     out.writeInt(record.readAlignmentStart);
                     out.writeInt(record.readReferenceIndex);
                     out.writeBoolean(record.readNegStrandFlag);
                     out.writeBoolean(record.readUnmappedFlag);
+                    out.writeUTF(record.readCigarString);
                     out.writeInt(record.mateAlignmentStart);
                     out.writeInt(record.mateReferenceIndex);
                     out.writeBoolean(record.mateNegStrandFlag);
                     out.writeBoolean(record.mateUnmappedFlag);
+                    // writeUTF can't take null, so store a null mateCigarString as an empty string
+                    out.writeUTF(record.mateCigarString != null ? record.mateCigarString : "");
                     out.writeBoolean(record.firstOfPairFlag);
                     out.writeLong(record.recordNumber);
                 } catch (IOException e) {
@@ -696,17 +737,23 @@ public class SamFileValidator {
                     final int readReferenceIndex = in.readInt();
                     final boolean readNegStrandFlag = in.readBoolean();
                     final boolean readUnmappedFlag = in.readBoolean();
+                    final String readCigarString = in.readUTF();
 
                     final int mateAlignmentStart = in.readInt();
                     final int mateReferenceIndex = in.readInt();
                     final boolean mateNegStrandFlag = in.readBoolean();
                     final boolean mateUnmappedFlag = in.readBoolean();
 
+                    // read mateCigarString - note that null value is stored as an empty string
+                    final String mcs = in.readUTF();
+                    final String mateCigarString = !mcs.isEmpty() ? mcs : null;
+
                     final boolean firstOfPairFlag = in.readBoolean();
 
                     final long recordNumber = in.readLong();
                     final PairEndInfo rec = new PairEndInfo(readAlignmentStart, readReferenceIndex, readNegStrandFlag,
-                            readUnmappedFlag, mateAlignmentStart, mateReferenceIndex, mateNegStrandFlag, mateUnmappedFlag,
+                            readUnmappedFlag, readCigarString, mateAlignmentStart, mateReferenceIndex, mateNegStrandFlag,
+                            mateUnmappedFlag, mateCigarString,
                             firstOfPairFlag, recordNumber);
                     return new AbstractMap.SimpleEntry(key, rec);
                 } catch (IOException e) {

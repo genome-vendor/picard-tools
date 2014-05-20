@@ -30,6 +30,7 @@ import net.sf.picard.fastq.FastqReader;
 import net.sf.picard.fastq.FastqRecord;
 import net.sf.picard.io.IoUtil;
 import net.sf.samtools.SAMFileReader;
+import net.sf.samtools.SAMFormatException;
 import net.sf.samtools.SAMRecord;
 import net.sf.samtools.util.IOUtil;
 import org.testng.Assert;
@@ -154,8 +155,36 @@ public class SamToFastqTest {
         }
     }
 
+    @Test(dataProvider =  "okFiles")
+    public void testOkInterleavedFile(final String samFilename) throws IOException {
+        final File samFile = new File(TEST_DATA_DIR,samFilename);
+        final File pairFile = newTempFastqFile("pair");
 
-    @Test (dataProvider = "badFiles", expectedExceptions= PicardException.class)
+        convertFile(new String[]{
+                "INPUT=" + samFile.getAbsolutePath(),
+                "FASTQ=" + pairFile.getAbsolutePath(),
+                "INTERLEAVE=true"
+        });
+
+        final Set<String> outputHeaderSet = createFastqReadHeaderSet(pairFile);
+        // Create map of mate pairs from SAM records
+        final Map<String,MatePair> map = createSamMatePairsMap(samFile) ;
+        Assert.assertEquals(map.size() * 2, outputHeaderSet.size());
+
+        // Ensure that each mate of each pair in SAM file is in the correct fastq pair file
+        for (final Map.Entry<String,MatePair> entry : map.entrySet() ) {
+            final MatePair mpair = entry.getValue();
+            Assert.assertNotNull(mpair.mate1); // ensure we have two mates
+            Assert.assertNotNull(mpair.mate2);
+            Assert.assertEquals(mpair.mate1.getReadName(),mpair.mate2.getReadName());
+            final String readName = mpair.mate1.getReadName() ;
+            Assert.assertTrue(outputHeaderSet.contains(readName+"/1")); // ensure mate is in correct file
+            Assert.assertTrue(outputHeaderSet.contains(readName+"/2"));
+        }
+    }
+
+
+    @Test (dataProvider = "badFiles", expectedExceptions= SAMFormatException.class)
     public void testBadFile(final String samFilename) throws IOException {
         final File samFile = new File(TEST_DATA_DIR,samFilename);
         final File pair1 = File.createTempFile("tt-pair1.", ".fastq");

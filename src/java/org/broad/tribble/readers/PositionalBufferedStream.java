@@ -22,7 +22,9 @@ import org.broad.tribble.TribbleException;
 import java.io.*;
 
 /**
- * @author Mark DePristo
+ * A wrapper around an {@code InputStream} which performs it's own buffering, and keeps track of the position.
+ * 
+ * @author depristo
  */
 public final class PositionalBufferedStream extends InputStream implements Positional {
     final InputStream is;
@@ -56,24 +58,6 @@ public final class PositionalBufferedStream extends InputStream implements Posit
         return c;
     }
 
-    /**
-     * Reads up to len bytes of data from the input stream into an array of bytes. An attempt is
-     * made to read as many as len bytes, but a smaller number may be read. The number of bytes
-     * actually read is returned as an integer.
-     *
-     * This method blocks until input data is available, end of file is detected, or an exception is thrown.
-     *
-     * If len is zero, then no bytes are read and 0 is returned; otherwise, there is an attempt to read
-     * at least one byte. If no byte is available because the stream is at end of file,
-     * the value -1 is returned; otherwise, at least one byte is read and stored into b.
-     *
-     * The first byte read is stored into element b[off], the next one into b[off+1], and so on.
-     * The number of bytes read is, at most, equal to len. Let k be the number of bytes actually
-     * read; these bytes will be stored in elements b[off] through b[off+k-1], leaving
-     * elements b[off+k] through b[off+len-1] unaffected.
-     *
-     * In every case, elements b[0] through b[off] and elements b[off+len] through b[b.length-1] are unaffected.
-     */
     @Override
     public final int read(final byte[] bytes, final int start, final int len) throws IOException {
         if ( len == 0 ) // If len is zero, then no bytes are read and 0 is returned
@@ -87,8 +71,9 @@ public final class PositionalBufferedStream extends InputStream implements Posit
             while ( remaining > 0 ) {
                 // Try to Refill buffer if at the end of current buffer
                 if ( nChars == nextChar )
-                    if ( fill() < 0 )
+                    if ( fill() < 0 ) { // EOF
                         break;
+                    }
 
                 // we copy as many bytes from the buffer as possible, up to the number of need
                 final int nCharsToCopy = Math.min(nChars - nextChar, remaining);
@@ -102,7 +87,9 @@ public final class PositionalBufferedStream extends InputStream implements Posit
 
             // make sure we update our position tracker to reflect having advanced by nRead bytes
             position += nRead;
-            return nRead;
+            
+            /** Conform to {@link InputStream#read(byte[], int, int)} contract by returning -1 if EOF and no data was read. */
+            return nRead == 0 ? -1 : nRead;
         }
     }
 
@@ -116,12 +103,6 @@ public final class PositionalBufferedStream extends InputStream implements Posit
         return nChars == -1 || peek() == -1;
     }
 
-    /**
-     * Peek ahead one character, filling from the underlying stream if neccessary.
-     *
-     * @return the read character as an int, or -1 if EOF has been reached
-     * @throws java.io.IOException
-     */
     @Override
     public final int peek() throws IOException {
         // Check for EOF

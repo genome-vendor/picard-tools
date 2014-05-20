@@ -33,5 +33,5 @@ public interface PrimaryAlignmentSelectionStrategy {
      * When this method returns, one alignment has been marked as primary according to the implementation's strategy.
      *
      */
-    void pickPrimaryAlignment(MultiHitAlignedReadIterator.HitsForInsert hitsForInsert);
+    void pickPrimaryAlignment(HitsForInsert hitsForInsert);
 }

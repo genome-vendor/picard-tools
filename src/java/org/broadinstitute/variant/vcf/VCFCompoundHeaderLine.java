@@ -32,6 +32,7 @@ import org.broadinstitute.variant.variantcontext.VariantContext;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.Map;
 
 /**
@@ -150,7 +151,11 @@ public abstract class VCFCompoundHeaderLine extends VCFHeaderLine implements VCF
      */
     protected VCFCompoundHeaderLine(String line, VCFHeaderVersion version, SupportedHeaderLineType lineType) {
         super(lineType.toString(), "");
-        Map<String,String> mapping = VCFHeaderLineTranslator.parseLine(version,line, Arrays.asList("ID","Number","Type","Description"));
+
+        final ArrayList<String> expectedTags = new ArrayList(Arrays.asList("ID","Number","Type","Description"));
+        if ( version.isAtLeastAsRecentAs(VCFHeaderVersion.VCF4_2) )
+            expectedTags.add("Version");
+        final Map<String,String> mapping = VCFHeaderLineTranslator.parseLine(version, line, expectedTags);
         name = mapping.get("ID");
         count = -1;
         final String numberStr = mapping.get("Number");
@@ -158,10 +163,8 @@ public abstract class VCFCompoundHeaderLine extends VCFHeaderLine implements VCF
             countType = VCFHeaderLineCount.A;
         } else if ( numberStr.equals(VCFConstants.PER_GENOTYPE_COUNT) ) {
             countType = VCFHeaderLineCount.G;
-        } else if ( ((version == VCFHeaderVersion.VCF4_0 || version == VCFHeaderVersion.VCF4_1) &&
-                     numberStr.equals(VCFConstants.UNBOUNDED_ENCODING_v4)) ||
-                    ((version == VCFHeaderVersion.VCF3_2 || version == VCFHeaderVersion.VCF3_3) &&
-                     numberStr.equals(VCFConstants.UNBOUNDED_ENCODING_v3)) ) {
+        } else if ( (version.isAtLeastAsRecentAs(VCFHeaderVersion.VCF4_0) && numberStr.equals(VCFConstants.UNBOUNDED_ENCODING_v4)) ||
+                    (! version.isAtLeastAsRecentAs(VCFHeaderVersion.VCF4_0) && numberStr.equals(VCFConstants.UNBOUNDED_ENCODING_v3)) ) {
             countType = VCFHeaderLineCount.UNBOUNDED;
         } else {
             countType = VCFHeaderLineCount.INTEGER;
@@ -193,6 +196,10 @@ public abstract class VCFCompoundHeaderLine extends VCFHeaderLine implements VCF
         if ( name == null || type == null || description == null || lineType == null )
             throw new IllegalArgumentException(String.format("Invalid VCFCompoundHeaderLine: key=%s name=%s type=%s desc=%s lineType=%s", 
                     super.getKey(), name, type, description, lineType ));
+        if ( name.contains("<") || name.contains(">") )
+            throw new IllegalArgumentException("VCFHeaderLine: ID cannot contain angle brackets");
+        if ( name.contains("=") )
+            throw new IllegalArgumentException("VCFHeaderLine: ID cannot contain an equals sign");
 
         if ( type == VCFHeaderLineType.Flag && count != 0 ) {
             count = 0;

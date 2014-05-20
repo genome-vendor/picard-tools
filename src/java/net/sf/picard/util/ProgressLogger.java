@@ -1,6 +1,7 @@
 package net.sf.picard.util;
 
 import net.sf.samtools.SAMRecord;
+import net.sf.samtools.util.ProgressLoggerInterface;
 
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
@@ -11,17 +12,34 @@ import java.text.NumberFormat;
  *
  * @author Tim Fennell
  */
-public class ProgressLogger {
+public class ProgressLogger implements ProgressLoggerInterface {
     private final Log log;
     private final int n;
     private final String verb;
+    private final String noun;
     private final long startTime = System.currentTimeMillis();
     
     private final NumberFormat fmt = new DecimalFormat("#,###");
     private final NumberFormat timeFmt = new DecimalFormat("00");
     
     private long processed = 0;
-    private long lastStartTime = startTime;
+
+	// Set to -1 until the first record is added
+    private long lastStartTime = -1;
+
+    /**
+     * Construct a progress logger.
+     * @param log the Log object to write outputs to
+     * @param n the frequency with which to output (i.e. every N records)
+     * @param verb the verb to log, e.g. "Processed, Read, Written".
+     * @param noun the noun to use when logging, e.g. "Records, Variants, Loci"
+     */
+    public ProgressLogger(final Log log, final int n, final String verb, final String noun) {
+        this.log = log;
+        this.n = n;
+        this.verb = verb;
+        this.noun = noun;
+    }
 
     /**
      * Construct a progress logger.
@@ -30,9 +48,7 @@ public class ProgressLogger {
      * @param verb the verb to log, e.g. "Processed, Read, Written".
      */
     public ProgressLogger(final Log log, final int n, final String verb) {
-        this.log = log;
-        this.n = n;
-        this.verb = verb;
+        this(log, n, verb, "records");
     }
 
     /**
@@ -49,7 +65,8 @@ public class ProgressLogger {
     public ProgressLogger(final Log log) { this(log, 1000000); }
 
     public synchronized boolean record(final String chrom, final int pos) {
-        if (++this.processed % this.n == 0) {
+	    if (this.lastStartTime == -1) this.lastStartTime = System.currentTimeMillis();
+	    if (++this.processed % this.n == 0) {
             final long now = System.currentTimeMillis();
             final long lastPeriodSeconds = (now - this.lastStartTime) / 1000;
             this.lastStartTime = now;
@@ -63,7 +80,7 @@ public class ProgressLogger {
             if (chrom == null) readInfo = "*/*";
             else readInfo = chrom + ":" + fmt.format(pos);
 
-            log.info(this.verb, " ", processed, " records.  Elapsed time: ", elapsed, "s.  Time for last ", fmt.format(this.n),
+            log.info(this.verb, " ", processed, " " + noun + ".  Elapsed time: ", elapsed, "s.  Time for last ", fmt.format(this.n),
                      ": ", period, "s.  Last read position: ", readInfo);
             return true;
         }

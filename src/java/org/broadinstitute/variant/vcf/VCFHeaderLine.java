@@ -44,7 +44,6 @@ public class VCFHeaderLine implements Comparable {
     private String mKey = null;
     private String mValue = null;
 
-
     /**
      * create a VCF header line
      *
@@ -54,6 +53,10 @@ public class VCFHeaderLine implements Comparable {
     public VCFHeaderLine(String key, String value) {
         if ( key == null )
             throw new IllegalArgumentException("VCFHeaderLine: key cannot be null");
+        if ( key.contains("<") || key.contains(">") )
+            throw new IllegalArgumentException("VCFHeaderLine: key cannot contain angle brackets");
+        if ( key.contains("=") )
+            throw new IllegalArgumentException("VCFHeaderLine: key cannot contain an equals sign");
         mKey = key;
         mValue = value;
     }
@@ -74,6 +77,15 @@ public class VCFHeaderLine implements Comparable {
      */
     public String getValue() {
         return mValue;
+    }
+
+    /**
+     * By default the header lines won't be added to the dictionary, unless this method will be override (for example in FORMAT, INFO or FILTER header lines)
+     *
+     * @return false
+     */
+    public boolean shouldBeAddedToDictionary() {
+        return false;
     }
 
     public String toString() {

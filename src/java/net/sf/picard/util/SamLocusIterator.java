@@ -111,6 +111,8 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
         public String toString() {
             return referenceSequence.getSequenceName() + ":" + position;
         }
+
+        public int getSequenceLength(){return referenceSequence.getSequenceLength();}
     }
 
 
@@ -118,7 +120,7 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
     private final SAMFileReader samReader;
     private final ReferenceSequenceMask referenceSequenceMask;
     private PeekableIterator<SAMRecord> samIterator;
-    private List<SamRecordFilter> samFilters = Arrays.asList(new NotPrimaryAlignmentFilter(),
+    private List<SamRecordFilter> samFilters = Arrays.asList(new SecondaryOrSupplementaryFilter(),
                                                              new DuplicateReadFilter());
     private final List<Interval> intervals;
     private final boolean useIndex;
@@ -131,8 +133,8 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
     private final LinkedList<LocusInfo> accumulator = new LinkedList<LocusInfo>();
 
     private int qualityScoreCutoff = Integer.MIN_VALUE;
-
     private int mappingQualityScoreCutoff = Integer.MIN_VALUE;
+    private boolean includeNonPfReads = true;
 
     /**
      * If true, emit a LocusInfo for every locus in the target map, or if no target map,
@@ -168,7 +170,7 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
      * passed in that is not coordinate sorted, it will eventually be coordinated sorted by this class.
      */
     public SamLocusIterator(final SAMFileReader samReader, final IntervalList intervalList) {
-        this(samReader, intervalList, false);
+        this(samReader, intervalList, samReader.hasIndex());
     }
 
     /**
@@ -178,7 +180,8 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
      * @param intervalList Either the list of desired intervals, or null.  Note that if an intervalList is
      * passed in that is not coordinate sorted, it will eventually be coordinated sorted by this class.
      * @param useIndex If true, do indexed lookup to improve performance.  Not relevant if intervalList == null.
-     * This can actually slow performance if the intervals are densely packed.
+     * It is no longer the case the useIndex==true can make performance worse.  It should always perform at least
+     * as well as useIndex==false, and generally will be much faster.
      */
     public SamLocusIterator(final SAMFileReader samReader, final IntervalList intervalList, final boolean useIndex) {
         if (samReader.getFileHeader().getSortOrder() == null || samReader.getFileHeader().getSortOrder() == SAMFileHeader.SortOrder.unsorted) {
@@ -228,6 +231,10 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
      * or loci in the target mask that have yet to be covered.
      */
     public boolean hasNext() {
+        if (this.samIterator == null) {
+            iterator();
+        }
+
         while (complete.isEmpty() && ((!accumulator.isEmpty()) || samHasMore() || hasRemainingMaskBases())) {
             final LocusInfo locusInfo = next();
             if (locusInfo != null) {
@@ -250,7 +257,7 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
         }
         return (lastReferenceSequence < referenceSequenceMask.getMaxSequenceIndex() ||
                (lastReferenceSequence == referenceSequenceMask.getMaxSequenceIndex() &&
-                lastPosition <= referenceSequenceMask.nextPosition(lastReferenceSequence, lastPosition+1)));
+                lastPosition < referenceSequenceMask.nextPosition(lastReferenceSequence, lastPosition)));
     }
 
     /**
@@ -270,7 +277,9 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
 
             }
             // Skip over an unaligned read that has been forced to be sorted with the aligned reads
-            if (rec.getReadUnmappedFlag()) {
+            if (rec.getReadUnmappedFlag()
+                    || rec.getMappingQuality() < this.mappingQualityScoreCutoff
+                    || (!this.includeNonPfReads && rec.getReadFailsVendorQualityCheckFlag())) {
                 samIterator.next();
                 continue;
             }
@@ -354,8 +363,7 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
                             rec.getAlignmentStart() + j));
                 }
                 // if the quality score cutoff is met, accumulate the base info
-                if (rec.getBaseQualities()[readOffset] >= getQualityScoreCutoff() &&
-                        rec.getMappingQuality() >= getMappingQualityScoreCutoff()) {
+                if (rec.getBaseQualities()[readOffset] >= getQualityScoreCutoff()) {
                     accumulator.get(refOffset).add(rec, readOffset);
                 }
             }
@@ -378,7 +386,7 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
 
 
 
-            final int nextbit = referenceSequenceMask.nextPosition(lastReferenceSequence, lastPosition+1);
+            final int nextbit = referenceSequenceMask.nextPosition(lastReferenceSequence, lastPosition);
 
             // try the next reference sequence
             if (nextbit == -1) {
@@ -476,15 +484,14 @@ public class SamLocusIterator implements Iterable<SamLocusIterator.LocusInfo>, C
     public int getMappingQualityScoreCutoff() {
         return mappingQualityScoreCutoff;
     }
+    public void setMappingQualityScoreCutoff(final int mappingQualityScoreCutoff) { this.mappingQualityScoreCutoff = mappingQualityScoreCutoff; }
 
-    public void setMappingQualityScoreCutoff(final int mappingQualityScoreCutoff) {
-        this.mappingQualityScoreCutoff = mappingQualityScoreCutoff;
-    }
+    public boolean isIncludeNonPfReads() { return includeNonPfReads; }
+    public void setIncludeNonPfReads(final boolean includeNonPfReads) { this.includeNonPfReads = includeNonPfReads; }
 
     public boolean isEmitUncoveredLoci() {
         return emitUncoveredLoci;
     }
-
     public void setEmitUncoveredLoci(final boolean emitUncoveredLoci) {
         this.emitUncoveredLoci = emitUncoveredLoci;
     }

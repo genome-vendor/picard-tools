@@ -38,12 +38,14 @@ public class FTPUtils {
 
     static Map<String, String> userCredentials = new HashMap<String, String>();
 
+    static int TIMEOUT = 10000;
+
     public static boolean resourceAvailable(URL url) {
         InputStream is = null;
         try {
             URLConnection conn = url.openConnection();
-            conn.setConnectTimeout(10000);
-            conn.setReadTimeout(10000);
+            conn.setConnectTimeout(TIMEOUT);
+            conn.setReadTimeout(TIMEOUT);
             is = conn.getInputStream();
             return (is.read() >= 0);
 
@@ -61,12 +63,29 @@ public class FTPUtils {
         }
     }
 
+    public static long getContentLength(URL url) throws IOException {
+        FTPClient ftp = null;
+        try {
+            ftp = FTPUtils.connect(url.getHost(), url.getUserInfo(), null);
+            String sizeString = ftp.executeCommand("size " + url.getPath()).getReplyString();
+            return Integer.parseInt(sizeString);
+        } catch (Exception e) {
+            return -1 ;
+        }
+        finally {
+            if(ftp != null) {
+                ftp.disconnect();
+            }
+        }
+    }
+
 
     /**
      * Connect to an FTP server
      *
      * @param host
      * @param userInfo
+     * @param userPasswordInput Dialog with which a user can enter credentials, if login fails
      * @return
      * @throws IOException
      */

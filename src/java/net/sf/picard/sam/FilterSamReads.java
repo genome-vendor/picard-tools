@@ -23,7 +23,7 @@
  */
 
 /**
- * $Id: FilterSamReads.java 1235 2012-07-21 12:49:32Z tfenne $
+ * $Id: FilterSamReads.java 1950 2014-04-28 21:41:46Z geoffjentry $
  */
 package net.sf.picard.sam;
 
@@ -43,6 +43,7 @@ import net.sf.samtools.SAMFileReader;
 import net.sf.samtools.SAMFileWriter;
 import net.sf.samtools.SAMFileWriterFactory;
 import net.sf.samtools.SAMRecord;
+import net.sf.samtools.util.IOUtil;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -53,7 +54,7 @@ import java.text.DecimalFormat;
  * From a SAM or BAM file, produce a new SAM or BAM by filtering aligned reads or a list of read
  * names provided in a file (one readname per line)
  * <p/>
- * $Id: FilterSamReads.java 1235 2012-07-21 12:49:32Z tfenne $
+ * $Id: FilterSamReads.java 1950 2014-04-28 21:41:46Z geoffjentry $
  */
 public class FilterSamReads extends CommandLineProgram {
 
@@ -148,7 +149,7 @@ public class FilterSamReads extends CommandLineProgram {
     private void writeReadsFile(final File samOrBamFile) throws IOException {
         final SAMFileReader reader = new SAMFileReader(samOrBamFile);
         final File readsFile =
-            new File(OUTPUT.getParentFile(), IoUtil.basename(samOrBamFile) + ".reads");
+            new File(OUTPUT.getParentFile(), IOUtil.basename(samOrBamFile) + ".reads");
         IoUtil.assertFileIsWritable(readsFile);
         final BufferedWriter bw = IoUtil.openFileForBufferedWriting(readsFile, false);
 

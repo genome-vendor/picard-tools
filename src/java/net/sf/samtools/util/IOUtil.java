@@ -25,20 +25,20 @@ package net.sf.samtools.util;
 
 
 import net.sf.samtools.Defaults;
+import net.sf.samtools.seekablestream.SeekableBufferedStream;
+import net.sf.samtools.seekablestream.SeekableFileStream;
+import net.sf.samtools.seekablestream.SeekableStream;
 
-import java.io.BufferedInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.File;
+import java.io.*;
 
 /**
  * Miscellaneous stateless static IO-oriented methods.
  */
 public class IOUtil {
     /**
-     * @deprecated Use Defaults.BUFFER_SIZE instead.
+     * @deprecated Use Defaults.NON_ZERO_BUFFER_SIZE instead.
      */
-    @Deprecated public static final int STANDARD_BUFFER_SIZE = Defaults.BUFFER_SIZE;
+    @Deprecated public static final int STANDARD_BUFFER_SIZE = Defaults.NON_ZERO_BUFFER_SIZE;
 
     public static final long ONE_GB   = 1024 * 1024 * 1024;
     public static final long TWO_GBS  = 2 * ONE_GB;
@@ -53,9 +53,93 @@ public class IOUtil {
         if (stream instanceof BufferedInputStream) {
             return (BufferedInputStream) stream;
         } else {
-            return new BufferedInputStream(stream, STANDARD_BUFFER_SIZE);
+            return new BufferedInputStream(stream, Defaults.NON_ZERO_BUFFER_SIZE);
         }
     }
+
+    /**
+     * Transfers from the input stream to the output stream using stream operations and a buffer.
+     */
+    public static void transferByStream(final InputStream in, final OutputStream out, final long bytes) {
+        final byte[] buffer = new byte[Defaults.NON_ZERO_BUFFER_SIZE];
+        long remaining = bytes;
+
+        try {
+            while (remaining > 0) {
+                final int read = in.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+                out.write(buffer, 0, read);
+                remaining -= read;
+            }
+        }
+        catch (final IOException ioe) {
+            throw new RuntimeIOException(ioe);
+        }
+    }
+
+    /**
+     * @return If Defaults.BUFFER_SIZE > 0, wrap os in BufferedOutputStream, else return os itself.
+     */
+    public static OutputStream maybeBufferOutputStream(final OutputStream os) {
+        return maybeBufferOutputStream(os, Defaults.BUFFER_SIZE);
+    }
+
+    /**
+     * @return If bufferSize > 0, wrap os in BufferedOutputStream, else return os itself.
+     */
+    public static OutputStream maybeBufferOutputStream(final OutputStream os, final int bufferSize) {
+        if (bufferSize > 0) return new BufferedOutputStream(os, bufferSize);
+        else return os;
+    }
+
+    public static SeekableStream maybeBufferedSeekableStream(final SeekableStream stream, final int bufferSize) {
+        return bufferSize > 0 ? new SeekableBufferedStream(stream, bufferSize) : stream; 
+    }
+    
+    public static SeekableStream maybeBufferedSeekableStream(final SeekableStream stream) {
+        return maybeBufferedSeekableStream(stream, Defaults.BUFFER_SIZE);
+    }
+    
+    public static SeekableStream maybeBufferedSeekableStream(final File file) {
+        try {
+            return maybeBufferedSeekableStream(new SeekableFileStream(file));
+        } catch (final FileNotFoundException e) {
+            throw new RuntimeIOException(e);
+        }
+    }
+    
+    /**
+     * @return If Defaults.BUFFER_SIZE > 0, wrap is in BufferedInputStream, else return is itself.
+     */
+    public static InputStream maybeBufferInputStream(final InputStream is) {
+        return maybeBufferInputStream(is, Defaults.BUFFER_SIZE);
+    }
+    
+    /**
+     * @return If bufferSize > 0, wrap is in BufferedInputStream, else return is itself.
+     */
+    public static InputStream maybeBufferInputStream(final InputStream is, final int bufferSize) {
+        if (bufferSize > 0) return new BufferedInputStream(is, bufferSize);
+        else return is;
+    }
+
+    public static Reader maybeBufferReader(Reader reader, final int bufferSize) {
+        if (bufferSize > 0) reader = new BufferedReader(reader, bufferSize);
+        return reader;
+    }
+
+    public static Reader maybeBufferReader(final Reader reader) {
+        return maybeBufferReader(reader, Defaults.BUFFER_SIZE);
+    }
+
+    public static Writer maybeBufferWriter(Writer writer, final int bufferSize) {
+        if (bufferSize > 0) writer = new BufferedWriter(writer, bufferSize);
+        return writer;
+    }
+
+    public static Writer maybeBufferWriter(final Writer writer) {
+        return maybeBufferWriter(writer, Defaults.BUFFER_SIZE);
+    }
+
 
     /**
      * Delete a list of files, and write a warning message if one could not be deleted.
@@ -96,7 +180,7 @@ public class IOUtil {
         File f = null;
 
         for (int i=0; i<tmpDirs.length; ++i) {
-            if (tmpDirs[i].getUsableSpace() > minBytesFree || i == tmpDirs.length-1) {
+            if ( i == tmpDirs.length-1 || tmpDirs[i].getUsableSpace() > minBytesFree) {
                 f = File.createTempFile(prefix, suffix, tmpDirs[i]);
                 f.deleteOnExit();
                 break;
@@ -118,7 +202,19 @@ public class IOUtil {
         final String user = System.getProperty("user.name");
         final String tmp = System.getProperty("java.io.tmpdir");
 
-        if (tmp.endsWith("/" + user)) return new File(tmp);
+        if (tmp.endsWith(File.separatorChar + user)) return new File(tmp);
         else return new File(tmp, user);
+    }
+
+    /** Returns the name of the file minus the extension (i.e. text after the last "." in the filename). */
+    public static String basename(final File f) {
+        final String full = f.getName();
+        final int index = full.lastIndexOf(".");
+        if (index > 0  && index > full.lastIndexOf(File.separator)) {
+            return full.substring(0, index);
+        }
+        else {
+            return full;
+        }
     }
 }

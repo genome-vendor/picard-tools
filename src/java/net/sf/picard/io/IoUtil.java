@@ -24,15 +24,17 @@
 package net.sf.picard.io;
 
 import net.sf.picard.PicardException;
+import net.sf.picard.util.IterableOnceIterator;
 import net.sf.samtools.Defaults;
-import net.sf.samtools.util.RuntimeIOException;
+import net.sf.samtools.util.*;
 
 import java.io.*;
 import java.nio.charset.Charset;
-import java.util.Arrays;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
+
 import org.apache.tools.bzip2.CBZip2InputStream;
 import org.apache.tools.bzip2.CBZip2OutputStream;
 
@@ -42,6 +44,9 @@ import org.apache.tools.bzip2.CBZip2OutputStream;
  * @author Tim Fennell
  */
 public class IoUtil extends net.sf.samtools.util.IOUtil {
+    /** Possible extensions for VCF files and related formats. */
+    public static final String[] VCF_EXTENSIONS = new String[] {".vcf", ".vcf.gz", ".bcf"};
+
     /**
      * Checks that a file is non-null, exists, is not a directory and is readable.  If any
      * condition is false then a runtime exception is thrown.
@@ -283,7 +288,7 @@ public class IoUtil extends net.sf.samtools.util.IOUtil {
      * Preferred over PrintStream and PrintWriter because an exception is thrown on I/O error
      */
     public static BufferedWriter openFileForBufferedWriting(final File file, final boolean append) {
-        return new BufferedWriter(new OutputStreamWriter(openFileForWriting(file, append)), Defaults.BUFFER_SIZE);
+        return new BufferedWriter(new OutputStreamWriter(openFileForWriting(file, append)), Defaults.NON_ZERO_BUFFER_SIZE);
     }
 
     /**
@@ -297,8 +302,8 @@ public class IoUtil extends net.sf.samtools.util.IOUtil {
      * Preferred over PrintStream and PrintWriter because an exception is thrown on I/O error
      */
     public static BufferedWriter openFileForBufferedUtf8Writing(final File file) {
-        return new BufferedWriter(new OutputStreamWriter(
-            openFileForWriting(file), Charset.forName("UTF-8")), Defaults.BUFFER_SIZE);
+        return new BufferedWriter(new OutputStreamWriter(openFileForWriting(file), Charset.forName("UTF-8")),
+                Defaults.NON_ZERO_BUFFER_SIZE);
     }
 
     /**
@@ -321,9 +326,13 @@ public class IoUtil extends net.sf.samtools.util.IOUtil {
     public static OutputStream openGzipFileForWriting(final File file, final boolean append) {
 
         try {
+            if (Defaults.BUFFER_SIZE > 0) {
             return new CustomGzipOutputStream(new FileOutputStream(file, append),
                                               Defaults.BUFFER_SIZE,
                                               Defaults.COMPRESSION_LEVEL);
+            } else {
+                return new CustomGzipOutputStream(new FileOutputStream(file, append), Defaults.COMPRESSION_LEVEL);
+            }
         }
         catch (IOException ioe) {
             throw new PicardException("Error opening file for writing: " + file.getName(), ioe);
@@ -344,11 +353,15 @@ public class IoUtil extends net.sf.samtools.util.IOUtil {
             final FileOutputStream fos = new FileOutputStream(file, append);
             fos.write(66); //write magic number 'BZ' because CBZip2OutputStream does not do it for you
             fos.write(90);
-            return new BufferedOutputStream(new CBZip2OutputStream(fos), Defaults.BUFFER_SIZE);
+            return IOUtil.maybeBufferOutputStream(new CBZip2OutputStream(fos));
         }
         catch (IOException ioe) {
             throw new PicardException("Error opening file for writing: " + file.getName(), ioe);
         }
+    }
+
+    public static OutputStream openFileForMd5CalculatingWriting(final File file) {
+        return new Md5CalculatingOutputStream(IoUtil.openFileForWriting(file), new File(file.getAbsolutePath() + ".md5"));
     }
 
     /**
@@ -360,7 +373,7 @@ public class IoUtil extends net.sf.samtools.util.IOUtil {
      */
     public static void copyStream(final InputStream input, final OutputStream output) {
         try {
-            final byte[] buffer = new byte[Defaults.BUFFER_SIZE];
+            final byte[] buffer = new byte[Defaults.NON_ZERO_BUFFER_SIZE];
             int bytesRead = 0;
             while((bytesRead = input.read(buffer)) > 0) {
                 output.write(buffer, 0, bytesRead);
@@ -478,25 +491,13 @@ public class IoUtil extends net.sf.samtools.util.IOUtil {
     }
 
     /** Checks that a file exists and is readable, and then returns a buffered reader for it. */
-    public static BufferedReader openFileForBufferedReading(final File file) throws IOException {
-        return new BufferedReader(new InputStreamReader(openFileForReading(file)), Defaults.BUFFER_SIZE);
+    public static BufferedReader openFileForBufferedReading(final File file) {
+        return new BufferedReader(new InputStreamReader(openFileForReading(file)), Defaults.NON_ZERO_BUFFER_SIZE);
 	}
 
     /** Takes a string and replaces any characters that are not safe for filenames with an underscore */
     public static String makeFileNameSafe(final String str) {
         return str.trim().replaceAll("[\\s!\"#$%&'()*/:;<=>?@\\[\\]\\\\^`{|}~]", "_");
-    }
-
-    /** Returns the name of the file minus the extension (i.e. text after the last "." in the filename). */
-    public static String basename(final File f) {
-        final String full = f.getName();
-        final int index = full.lastIndexOf(".");
-        if (index > 0  && index > full.lastIndexOf(File.separator)) {
-            return full.substring(0, index);
-        }
-        else {
-            return full;
-        }
     }
 
     /** Returns the name of the file extension (i.e. text after the last "." in the filename) including the . */
@@ -521,7 +522,7 @@ public class IoUtil extends net.sf.samtools.util.IOUtil {
                 if (f != null) f = f.getCanonicalFile();
             }
             return canonicalPath;
-        } catch (IOException ioe) {
+        } catch (final IOException ioe) {
             throw new RuntimeException("Error getting full canonical path for " +
                     file + ": " + ioe.getMessage(), ioe);
         }
@@ -532,7 +533,7 @@ public class IoUtil extends net.sf.samtools.util.IOUtil {
      */
     public static String readFully(final InputStream in) {
         try {
-            final BufferedReader r = new BufferedReader(new InputStreamReader(in), Defaults.BUFFER_SIZE);
+            final BufferedReader r = new BufferedReader(new InputStreamReader(in), Defaults.NON_ZERO_BUFFER_SIZE);
             final StringBuilder builder = new StringBuilder(512);
             String line = null;
 
@@ -543,9 +544,125 @@ public class IoUtil extends net.sf.samtools.util.IOUtil {
 
             return builder.toString();
         }
-        catch (IOException ioe) {
+        catch (final IOException ioe) {
             throw new RuntimeIOException("Error reading stream", ioe);
         }
+    }
+
+    /**
+     * Returns an iterator over the lines in a text file. The underlying resources are automatically
+     * closed when the iterator hits the end of the input, or manually by calling close().
+     *
+     * @param f a file that is to be read in as text
+     * @return an iterator over the lines in the text file
+     */
+    public static IterableOnceIterator<String> readLines(final File f) {
+        try {
+            final BufferedReader in = IoUtil.openFileForBufferedReading(f);
+
+            return new IterableOnceIterator<String>() {
+                private String next = in.readLine();
+
+                /** Returns true if there is another line to read or false otherwise. */
+                @Override public boolean hasNext() { return next != null; }
+
+                /** Returns the next line in the file or null if there are no more lines. */
+                @Override public String next() {
+                    try {
+                        final String tmp = next;
+                        next = in.readLine();
+                        if (next == null) in.close();
+                        return tmp;
+                    }
+                    catch (final IOException ioe) { throw new RuntimeIOException(ioe); }
+                }
+
+                /** Closes the underlying input stream. Not required if end of stream has already been hit. */
+                @Override public void close() throws IOException { CloserUtil.close(in); }
+            };
+        }
+        catch (final IOException e) {
+            throw new RuntimeIOException(e);
+        }
+    }
+
+    /** Returns all of the untrimmed lines in the provided file. */
+    public static List<String> slurpLines(final File file) throws FileNotFoundException {
+        return slurpLines(new FileInputStream(file));
+    }
+
+    public static List<String> slurpLines(final InputStream is) throws FileNotFoundException {
+        /** See {@link Scanner} source for origin of delimiter used here.  */
+        return tokenSlurp(is, Charset.defaultCharset(), "\r\n|[\n\r\u2028\u2029\u0085]");
+    }
+    
+    /** Convenience overload for {@link #slurp(java.io.InputStream, java.nio.charset.Charset)} using the default charset {@link Charset#defaultCharset()}. */
+    public static String slurp(final File file) throws FileNotFoundException {
+        return slurp(new FileInputStream(file));
+    }
+    
+    /** Convenience overload for {@link #slurp(java.io.InputStream, java.nio.charset.Charset)} using the default charset {@link Charset#defaultCharset()}. */
+    public static String slurp(final InputStream is) {
+        return slurp(is, Charset.defaultCharset());
+    }
+
+    /** Reads all of the stream into a String, decoding with the provided {@link Charset} then closes the stream quietly. */
+    public static String slurp(final InputStream is, final Charset charSet) {
+        final List<String> tokenOrEmpty = tokenSlurp(is, charSet, "\\A");
+        return tokenOrEmpty.isEmpty() ? StringUtil.EMPTY_STRING : CollectionUtil.getSoleElement(tokenOrEmpty);
+    }
+
+    /** Tokenizes the provided input stream into memory using the given delimiter. */
+    private static List<String> tokenSlurp(final InputStream is, final Charset charSet, final String delimiterPattern) {
+        try {
+            final Scanner s = new Scanner(is, charSet.toString()).useDelimiter(delimiterPattern);
+            final LinkedList<String> tokens = new LinkedList<String>();
+            while (s.hasNext()) {
+                tokens.add(s.next());
+            }
+            return tokens;
+        } finally {
+            CloserUtil.close(is);
+        }
+    }
+
+    /**
+     * Go through the files provided and if they have one of the provided file extensions pass the file into the output
+     * otherwise assume that file is a list of filenames and unfold it into the output.
+     */
+    public static List<File> unrollFiles(final Collection<File> inputs, final String... extensions) {
+        if (extensions.length < 1) throw new IllegalArgumentException("Must provide at least one extension.");
+
+        final Stack<File> stack = new Stack<File>();
+        final List<File> output = new ArrayList<File>();
+        stack.addAll(inputs);
+
+        while (!stack.empty()) {
+            final File f = stack.pop();
+            final String name = f.getName();
+            boolean matched = false;
+
+            for (final String ext : extensions) {
+                if (!matched && name.endsWith(ext)) {
+                    output.add(f);
+                    matched = true;
+                }
+            }
+
+            // If the file didn't match a given extension, treat it as a list of files
+            if (!matched) {
+                IoUtil.assertFileIsReadable(f);
+
+                for (final String s : IoUtil.readLines(f)) {
+                    if (!s.trim().isEmpty()) stack.push(new File(s.trim()));
+                }
+            }
+        }
+
+        // Preserve input order (since we're using a stack above) for things that care
+        Collections.reverse(output);
+
+        return output;
     }
 }
 
@@ -558,6 +675,11 @@ public class IoUtil extends net.sf.samtools.util.IOUtil {
 class CustomGzipOutputStream extends GZIPOutputStream {
     CustomGzipOutputStream(final OutputStream outputStream, final int bufferSize, final int compressionLevel) throws IOException {
         super(outputStream, bufferSize);
+        this.def.setLevel(compressionLevel);
+    }
+
+    CustomGzipOutputStream(final OutputStream outputStream, final int compressionLevel) throws IOException {
+        super(outputStream);
         this.def.setLevel(compressionLevel);
     }
 }

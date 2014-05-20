@@ -32,12 +32,11 @@ function usage () {
 }
 
 function branch_exists() {
-    if svn info $1 2>&1 | fgrep -q 'Not a valid URL'
+    if svn info $1 2>&1 | egrep -q '(Not a valid URL)|(non-existent in revision)'
         then return 1
         else return 0
     fi
 }
-SVNROOT=https://svn.code.sf.net/p/picard/code
 
 set -e
 
@@ -66,9 +65,18 @@ then echo "EDITOR environment variable must be set." >&2
        exit 1
 fi
 
+# Require actual Java 1.6.  This is not necessary for compiling, because can run 1.7 with -target 1.6,
+# but this is necessary in order to force unit tests to run with 1.6.
+(echo $JAVA_HOME | fgrep -q 1.6 ) || { echo "JAVA_HOME $JAVA_HOME is not 1.6" ; exit 1; }
+java_version=`java -version 2>&1 | fgrep -i version`
+(echo $java_version | fgrep -q 1.6. ) || { echo "java -version: $java_version is not 1.6"; exit 1; }
+
+SVNROOT=svn+ssh://$USERNAME@svn.code.sf.net/p/picard/code
+
 RELEASE_ID=$1
 
-PREV_RELEASE_ID=`svn --username $USERNAME ls $SVNROOT/tags | tail -1 | sed 's/\/$//'`
+# Since releases are lexically sorted, need to filter in order to have 1.1xx be at the bottom.
+PREV_RELEASE_ID=`svn --username $USERNAME ls $SVNROOT/tags | egrep '[.]\d\d\d' | tail -1 | sed 's/\/$//'`
 
 if branch_exists $SVNROOT/branches/$RELEASE_ID
 then echo "ERROR: $SVNROOT/branches/$RELEASE_ID already exists.">&2
@@ -85,7 +93,8 @@ then echo "$TMPDIR/Picard-public already exists.  Please remove or specify a dif
         exit 1
 fi
 
-svn --username $USERNAME copy -m "Release $RELEASE_ID" $SVNROOT/trunk $SVNROOT/branches/$RELEASE_ID
+# NB: do not copy the trunk to branches, as we already are copying it to tags.
+#svn --username $USERNAME copy -m "Release $RELEASE_ID" $SVNROOT/trunk $SVNROOT/branches/$RELEASE_ID
 svn --username $USERNAME copy -m "Release $RELEASE_ID" $SVNROOT/trunk $SVNROOT/tags/$RELEASE_ID
 
 cd $TMPDIR

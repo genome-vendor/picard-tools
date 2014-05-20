@@ -62,18 +62,30 @@ public class VCFSimpleHeaderLine extends VCFHeaderLine implements VCFIDHeaderLin
      * @param expectedTagOrdering the tag ordering expected for this header line
      */
     public VCFSimpleHeaderLine(final String line, final VCFHeaderVersion version, final String key, final List<String> expectedTagOrdering) {
-        this(key, VCFHeaderLineTranslator.parseLine(version, line, expectedTagOrdering), expectedTagOrdering);
+        this(key, VCFHeaderLineTranslator.parseLine(version, line, expectedTagOrdering));
     }
 
-    public VCFSimpleHeaderLine(final String key, final Map<String, String> mapping, final List<String> expectedTagOrdering) {
+    public VCFSimpleHeaderLine(final String key, final Map<String, String> mapping) {
         super(key, "");
         name = mapping.get("ID");
         initialize(name, mapping);
     }
 
+	/**
+	 * Returns the String value associated with the given key. Returns null if there is no value. Key
+	 * must not be null.
+	 */
+	String getGenericFieldValue(final String key) {
+		return this.genericFields.get(key);
+	}
+
     protected void initialize(String name, Map<String, String> genericFields) {
         if ( name == null || genericFields == null || genericFields.isEmpty() )
             throw new IllegalArgumentException(String.format("Invalid VCFSimpleHeaderLine: key=%s name=%s", super.getKey(), name));
+        if ( name.contains("<") || name.contains(">") )
+            throw new IllegalArgumentException("VCFHeaderLine: ID cannot contain angle brackets");
+        if ( name.contains("=") )
+            throw new IllegalArgumentException("VCFHeaderLine: ID cannot contain an equals sign");
 
         this.name = name;
         this.genericFields.putAll(genericFields);

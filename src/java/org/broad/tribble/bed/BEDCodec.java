@@ -25,21 +25,26 @@ package org.broad.tribble.bed;
 
 import org.broad.tribble.AsciiFeatureCodec;
 import org.broad.tribble.annotation.Strand;
+import org.broad.tribble.readers.LineIterator;
 import org.broad.tribble.util.ParsingUtils;
 
 import java.util.regex.Pattern;
 
 /**
+ * Codec for parsing BED file, as described by UCSC
+ * See https://genome.ucsc.edu/FAQ/FAQformat.html#format1
+ *
  * @author jrobinso
  *         Date: Dec 20, 2009
  */
 public class BEDCodec extends AsciiFeatureCodec<BEDFeature> {
 
-    private int startOffsetValue;
+    private static final Pattern SPLIT_PATTERN = Pattern.compile("\\t|( +)");
+    private final int startOffsetValue;
 
     /**
-     * BED format is 0-based, but Tribble is 1-based by default.  Initialize with
-     * start position of one.
+     * Calls {@link #BEDCodec(StartOffset)} with an argument
+     * of {@code StartOffset.ONE}
      */
     public BEDCodec() {
         this(StartOffset.ONE);
@@ -50,10 +55,9 @@ public class BEDCodec extends AsciiFeatureCodec<BEDFeature> {
      * BED format is 0-based, but Tribble is 1-based.
      * Set desired start position at either ZERO or ONE
      */
-    public BEDCodec(StartOffset startOffset) {
+    public BEDCodec(final StartOffset startOffset) {
         super(BEDFeature.class);
         this.startOffsetValue = startOffset.value();
-        splitPattern = Pattern.compile("\\t|( +)");
     }
 
 
@@ -61,13 +65,6 @@ public class BEDCodec extends AsciiFeatureCodec<BEDFeature> {
         return decode(line);
     }
 
-    /**
-     * Convert a string to a BEDFeature.
-     * <p/>
-     *
-     * @param line the input line to decode
-     * @return a BEDFeature corresponding to line
-     */
     @Override
     public BEDFeature decode(String line) {
 
@@ -80,11 +77,15 @@ public class BEDCodec extends AsciiFeatureCodec<BEDFeature> {
             return null;
         }
 
-        String[] tokens = splitPattern.split(line, -1);
+        String[] tokens = SPLIT_PATTERN.split(line, -1);
         return decode(tokens);
     }
 
     @Override
+    public Object readActualHeader(LineIterator reader) {
+        return null;
+    }
+
     public BEDFeature decode(String[] tokens) {
         int tokenCount = tokens.length;
 
@@ -204,8 +205,8 @@ public class BEDCodec extends AsciiFeatureCodec<BEDFeature> {
 
     /**
      * Indicate whether co-ordinates or 0-based or 1-based.
-     * Tribble uses 1-based, BED files use 0.
      * <p/>
+     * Tribble uses 1-based, BED files use 0.
      * e.g.:
      * start_position = bedline_start_position - startIndex.value()
      */

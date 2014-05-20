@@ -84,7 +84,7 @@ public final class BCF2Utils {
 
         // set up the strings dictionary
         for ( VCFHeaderLine line : header.getMetaDataInInputOrder() ) {
-            if ( line instanceof VCFIDHeaderLine && ! (line instanceof VCFContigHeaderLine) ) {
+            if ( line.shouldBeAddedToDictionary() ) {
                 final VCFIDHeaderLine idLine = (VCFIDHeaderLine)line;
                 if ( ! seen.contains(idLine.getID())) {
                     dict.add(idLine.getID());
@@ -283,6 +283,11 @@ public final class BCF2Utils {
     public static List<Object> toList(final Object o) {
         if ( o == null ) return Collections.emptyList();
         else if ( o instanceof List ) return (List<Object>)o;
+        else if ( o.getClass().isArray() ) {
+            final List<Object> l = new ArrayList<Object>();
+            Collections.addAll(l, (int[])o);
+            return l;
+        }
         else return Collections.singletonList(o);
     }
 

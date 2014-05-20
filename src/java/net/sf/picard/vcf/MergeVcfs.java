@@ -23,6 +23,7 @@
  */
 package net.sf.picard.vcf;
 
+import net.sf.picard.PicardException;
 import net.sf.picard.cmdline.CommandLineParser;
 import net.sf.picard.cmdline.CommandLineProgram;
 import net.sf.picard.cmdline.Option;
@@ -32,18 +33,22 @@ import net.sf.picard.io.IoUtil;
 import net.sf.picard.util.Log;
 import net.sf.picard.util.MergingIterator;
 import net.sf.picard.util.ProgressLogger;
+import net.sf.samtools.SAMFileReader;
+import net.sf.samtools.SAMSequenceDictionary;
 import net.sf.samtools.util.CloseableIterator;
+import net.sf.samtools.util.CloserUtil;
 import org.broadinstitute.variant.variantcontext.VariantContext;
+import org.broadinstitute.variant.variantcontext.VariantContextComparator;
 import org.broadinstitute.variant.variantcontext.writer.Options;
 import org.broadinstitute.variant.variantcontext.writer.VariantContextWriter;
-import org.broadinstitute.variant.vcf.VCFContigHeaderLine;
+import org.broadinstitute.variant.variantcontext.writer.VariantContextWriterBuilder;
+import org.broadinstitute.variant.vcf.VCFFileReader;
 import org.broadinstitute.variant.vcf.VCFHeader;
 import org.broadinstitute.variant.vcf.VCFUtils;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -63,13 +68,18 @@ public class MergeVcfs extends CommandLineProgram {
 	@Usage
 	public final String USAGE =
 			CommandLineParser.getStandardUsagePreamble(getClass()) +
-			"Merges multiple SAM/BAM files into one file.\n";
+			"Merges multiple VCF or BCF files into one VCF file. Input files must be sorted by their contigs " +
+			"and, within contigs, by start position. The input files must have the same sample and " +
+			"contig lists. An index file is created and a sequence dictionary is required by default.";
 
-	@Option(shortName= StandardOptionDefinitions.INPUT_SHORT_NAME, doc="VCF input files", minElements=1)
+	@Option(shortName= StandardOptionDefinitions.INPUT_SHORT_NAME, doc="VCF or BCF input files File format is determined by file extension.", minElements=1)
 	public List<File> INPUT;
 
-	@Option(shortName=StandardOptionDefinitions.OUTPUT_SHORT_NAME, doc="VCF file to write merged result to")
+	@Option(shortName=StandardOptionDefinitions.OUTPUT_SHORT_NAME, doc="The merged VCF or BCF file. File format is determined by file extension.")
 	public File OUTPUT;
+
+	@Option(shortName="D", doc="The index sequence dictionary to use instead of the sequence dictionary in the input file", optional = true)
+	public File SEQUENCE_DICTIONARY;
 
 	private final Log log = Log.getInstance(MergeVcfs.class);
 
@@ -85,49 +95,65 @@ public class MergeVcfs extends CommandLineProgram {
 	protected int doWork() {
 		final ProgressLogger progress = new ProgressLogger(log, 10000);
 		final List<String> sampleList = new ArrayList<String>();
-		final List<String> contigList = new ArrayList<String>();
 		final Collection<CloseableIterator<VariantContext>> iteratorCollection = new ArrayList<CloseableIterator<VariantContext>>(INPUT.size());
 		final Collection<VCFHeader> headers = new HashSet<VCFHeader>(INPUT.size());
 
 		VariantContextComparator variantContextComparator = null;
+		SAMSequenceDictionary sequenceDictionary = null;
+
+		if (SEQUENCE_DICTIONARY != null) sequenceDictionary = SAMFileReader.getSequenceDictionary(SEQUENCE_DICTIONARY);
 
 		for (final File file : INPUT) {
 			IoUtil.assertFileIsReadable(file);
-			final VariantContextIterator variantIterator = new VariantContextIterator(file);
-			final VCFHeader header = variantIterator.getHeader();
+			final VCFFileReader fileReader = new VCFFileReader(file);
+			final VCFHeader fileHeader = fileReader.getFileHeader();
+
 			if (variantContextComparator == null) {
-				variantContextComparator = new VariantContextComparator(header.getContigLines());
+				variantContextComparator = fileHeader.getVCFRecordComparator();
 			} else {
-				if ( ! variantContextComparator.isCompatible(header.getContigLines())) {
+				if ( ! variantContextComparator.isCompatible(fileHeader.getContigLines())) {
 					throw new IllegalArgumentException(
 							"The contig entries in input file " + file.getAbsolutePath() + " are not compatible with the others.");
 				}
 			}
 
+			if (sequenceDictionary == null) sequenceDictionary = fileHeader.getSequenceDictionary();
+
 			if (sampleList.isEmpty()) {
-				sampleList.addAll(header.getSampleNamesInOrder());
+				sampleList.addAll(fileHeader.getSampleNamesInOrder());
 			} else {
-				if ( ! sampleList.equals(header.getSampleNamesInOrder())) {
+				if ( ! sampleList.equals(fileHeader.getSampleNamesInOrder())) {
 					throw new IllegalArgumentException("Input file " + file.getAbsolutePath() + " has sample entries that don't match the other files.");
 				}
 			}
 
-			headers.add(header);
-			iteratorCollection.add(variantIterator);
+			headers.add(fileHeader);
+			iteratorCollection.add(fileReader.iterator());
 		}
 
-		final EnumSet<Options> options = CREATE_INDEX ? EnumSet.of(Options.INDEX_ON_THE_FLY) : EnumSet.noneOf(Options.class);
-		final VariantContextWriter out = VariantContextUtils.getConditionallyCompressingWriter(OUTPUT, options);
-		out.writeHeader(new VCFHeader(VCFUtils.smartMergeHeaders(headers, false), sampleList));
+		if (CREATE_INDEX && sequenceDictionary == null) {
+			throw new PicardException("A sequence dictionary must be available (either through the input file or by setting it explicitly) when creating indexed output.");
+		}
+
+        final VariantContextWriterBuilder builder = new VariantContextWriterBuilder()
+                .setOutputFile(OUTPUT)
+                .setReferenceDictionary(sequenceDictionary)
+                .clearOptions();
+        if (CREATE_INDEX)
+            builder.setOption(Options.INDEX_ON_THE_FLY);
+        final VariantContextWriter writer = builder.build();
+
+		writer.writeHeader(new VCFHeader(VCFUtils.smartMergeHeaders(headers, false), sampleList));
 
 		final MergingIterator<VariantContext> mergingIterator = new MergingIterator<VariantContext>(variantContextComparator, iteratorCollection);
 		while (mergingIterator.hasNext()) {
 			final VariantContext context = mergingIterator.next();
-			out.add(context);
+			writer.add(context);
 			progress.record(context.getChr(), context.getStart());
 		}
 
-		out.close();
+		CloserUtil.close(mergingIterator);
+		writer.close();
 		return 0;
 	}
 }

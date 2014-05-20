@@ -20,16 +20,22 @@ package org.broad.tribble;
 
 import org.broad.tribble.index.Index;
 import org.broad.tribble.util.ParsingUtils;
+import org.broad.tribble.util.TabixUtils;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Set;
 
 /**
  * jrobinso
  * <p/>
  * the feature reader class, which uses indices and codecs to read in Tribble file formats.
  */
-public abstract class AbstractFeatureReader<T extends Feature> implements FeatureReader<T> {
+public abstract class AbstractFeatureReader<T extends Feature, SOURCE> implements FeatureReader<T> {
     // the logging destination for this source
     //private final static Logger log = Logger.getLogger("BasicFeatureSource");
 
@@ -38,35 +44,49 @@ public abstract class AbstractFeatureReader<T extends Feature> implements Featur
 
     // the query source, codec, and header
     // protected final QuerySource querySource;
-    protected final FeatureCodec codec;
+    protected final FeatureCodec<T, SOURCE> codec;
     protected FeatureCodecHeader header;
 
-    // A hook for the future, when we might allow clients to specify this.
+    private static ComponentMethods methods = new ComponentMethods();
 
+    public static final Set<String> BLOCK_COMPRESSED_EXTENSIONS = Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(".gz", ".gzip", ".bgz", ".bgzf")));
 
-    public static final AbstractFeatureReader getFeatureReader(String featureFile, FeatureCodec codec) throws TribbleException {
+    /**
+     * Calls {@link #getFeatureReader(String, FeatureCodec, boolean)} with {@code requireIndex} = true
+     */
+    public static <FEATURE extends Feature, SOURCE> AbstractFeatureReader<FEATURE, SOURCE> getFeatureReader(final String featureFile, final FeatureCodec<FEATURE, SOURCE> codec) throws TribbleException {
         return getFeatureReader(featureFile, codec, true);
     }
 
     /**
-     * factory for unknown file type,  could be ascii, binary, or could be tabix, or something else.
+     * {@link #getFeatureReader(String, String, FeatureCodec, boolean)} with {@code null} for indexResource
+     * @throws TribbleException
+     */
+    public static <FEATURE extends Feature, SOURCE> AbstractFeatureReader<FEATURE, SOURCE> getFeatureReader(final String featureResource, final FeatureCodec<FEATURE, SOURCE> codec, final boolean requireIndex) throws TribbleException {
+        return getFeatureReader(featureResource, null, codec, requireIndex);
+    }
+
+    /**
      *
      * @param featureResource the feature file to create from
-     * @param codec           the codec to read features with
+     * @param indexResource   the index for the feature file. If null, will auto-generate (if necessary)
+     * @param codec
+     * @param requireIndex    whether an index is required for this file
+     * @return
+     * @throws TribbleException
      */
-    public static final AbstractFeatureReader getFeatureReader(String featureResource, FeatureCodec codec, boolean requireIndex) throws TribbleException {
+    public static <FEATURE extends Feature, SOURCE> AbstractFeatureReader<FEATURE, SOURCE> getFeatureReader(final String featureResource, String indexResource, final FeatureCodec<FEATURE, SOURCE> codec, final boolean requireIndex) throws TribbleException {
 
         try {
             // Test for tabix index
-            if (featureResource.endsWith(".gz") &&
-                    ParsingUtils.resourceExists(featureResource + ".tbi")) {
+            if (methods.isTabix(featureResource, indexResource)) {
                 if ( ! (codec instanceof AsciiFeatureCodec) )
                     throw new TribbleException("Tabix indexed files only work with ASCII codecs, but received non-Ascii codec " + codec.getClass().getSimpleName());
-                return new TabixFeatureReader(featureResource, (AsciiFeatureCodec)codec);
+                return new TabixFeatureReader<FEATURE, SOURCE>(featureResource, (AsciiFeatureCodec) codec);
             }
             // Not tabix => tribble index file (might be gzipped, but not block gzipped)
             else {
-                return new TribbleIndexedFeatureReader(featureResource, codec, requireIndex);
+                return new TribbleIndexedFeatureReader<FEATURE, SOURCE>(featureResource, codec, requireIndex);
             }
         } catch (IOException e) {
             throw new TribbleException.MalformedFeatureFile("Unable to create BasicFeatureReader using feature file ", featureResource, e);
@@ -85,20 +105,54 @@ public abstract class AbstractFeatureReader<T extends Feature> implements Featur
      * @return a reader for this data
      * @throws TribbleException
      */
-    public static final AbstractFeatureReader getFeatureReader(String featureResource, FeatureCodec codec, Index index) throws TribbleException {
+    public static <FEATURE extends Feature, SOURCE> AbstractFeatureReader<FEATURE, SOURCE> getFeatureReader(final String featureResource, final FeatureCodec<FEATURE, SOURCE>  codec, final Index index) throws TribbleException {
         try {
-            return new TribbleIndexedFeatureReader(featureResource, codec, index);
+            return new TribbleIndexedFeatureReader<FEATURE, SOURCE>(featureResource, codec, index);
         } catch (IOException e) {
             throw new TribbleException.MalformedFeatureFile("Unable to create AbstractFeatureReader using feature file ", featureResource, e);
         }
 
     }
 
-    protected AbstractFeatureReader(String path, FeatureCodec codec) {
+    protected AbstractFeatureReader(final String path, final FeatureCodec<T, SOURCE> codec) {
         this.path = path;
         this.codec = codec;
     }
 
+    /**
+     * Whether the reader has an index or not
+     * Default implementation returns false
+     * @return
+     */
+    public boolean hasIndex(){
+        return false;
+    }
+
+    public static void setComponentMethods(ComponentMethods methods){
+        AbstractFeatureReader.methods = methods;
+    }
+
+    /**
+     * Whether a filename ends in one of the BLOCK_COMPRESSED_EXTENSIONS
+     * @param fileName
+     * @return
+     */
+    public static boolean hasBlockCompressedExtension (final String fileName) {
+        for (final String extension : BLOCK_COMPRESSED_EXTENSIONS) {
+            if (fileName.toLowerCase().endsWith(extension))
+                return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether the name of a file ends in one of the BLOCK_COMPRESSED_EXTENSIONS
+     * @param file
+     * @return
+     */
+    public static boolean hasBlockCompressedExtension (final File file) {
+        return hasBlockCompressedExtension(file.getName());
+    }
 
     /**
      * get the header
@@ -109,11 +163,21 @@ public abstract class AbstractFeatureReader<T extends Feature> implements Featur
         return header.getHeaderValue();
     }
 
-    static class EmptyIterator<T extends Feature> implements CloseableTribbleIterator {
+    static class EmptyIterator<T extends Feature> implements CloseableTribbleIterator<T> {
         public Iterator iterator() { return this; }
         public boolean hasNext() { return false; }
-        public Object next() { return null; }
+        public T next() { return null; }
         public void remove() { }
         @Override public void close() { }
+    }
+
+    public static class ComponentMethods{
+
+        public boolean isTabix(String resourcePath, String indexPath) throws IOException{
+            if(indexPath == null){
+                indexPath = ParsingUtils.appendToPath(resourcePath, TabixUtils.STANDARD_INDEX_EXTENSION);
+            }
+            return hasBlockCompressedExtension(resourcePath) && ParsingUtils.resourceExists(indexPath);
+        }
     }
 }

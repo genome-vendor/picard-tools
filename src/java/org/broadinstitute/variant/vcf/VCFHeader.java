@@ -25,18 +25,31 @@
 
 package org.broadinstitute.variant.vcf;
 
+import net.sf.samtools.SAMSequenceDictionary;
+import net.sf.samtools.SAMSequenceRecord;
 import org.broad.tribble.TribbleException;
 import org.broad.tribble.util.ParsingUtils;
 import org.broadinstitute.variant.utils.GeneralUtils;
+import org.broadinstitute.variant.variantcontext.VariantContextComparator;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 
 /**
- * This class is really a POS.  It allows duplicate entries in the metadata,
- * stores header lines in lots of places, and all around f*cking sucks.
- *
- * todo -- clean this POS up
+ * NOTE: This class allows duplicate entries in the metadata & stores header lines in
+ * lots of places. The original author noted that this should be cleaned up at some point
+ * in the future (jgentry - 5/2013)
  *
  * @author aaron
  *         <p/>
@@ -99,19 +112,18 @@ public class VCFHeader {
      *
      * @param metaData     the meta data associated with this header
      */
-    public VCFHeader(Set<VCFHeaderLine> metaData) {
+    public VCFHeader(final Set<VCFHeaderLine> metaData) {
         mMetaData.addAll(metaData);
         loadVCFVersion();
         loadMetaDataMaps();
     }
 
     /**
-     * Creates a shallow copy of the meta data in VCF header toCopy
-     *
-     * @param toCopy
+     * Creates a deep copy of the given VCFHeader, duplicating all its metadata and
+     * sample names.
      */
     public VCFHeader(final VCFHeader toCopy) {
-        this(toCopy.mMetaData);
+        this(toCopy.mMetaData, toCopy.mGenotypeSampleNames);
     }
 
     /**
@@ -120,11 +132,11 @@ public class VCFHeader {
      * @param metaData            the meta data associated with this header
      * @param genotypeSampleNames the sample names
      */
-    public VCFHeader(Set<VCFHeaderLine> metaData, Set<String> genotypeSampleNames) {
+    public VCFHeader(final Set<VCFHeaderLine> metaData, final Set<String> genotypeSampleNames) {
         this(metaData, new ArrayList<String>(genotypeSampleNames));
     }
 
-    public VCFHeader(Set<VCFHeaderLine> metaData, List<String> genotypeSampleNames) {
+    public VCFHeader(final Set<VCFHeaderLine> metaData, final List<String> genotypeSampleNames) {
         this(metaData);
 
         if ( genotypeSampleNames.size() != new HashSet<String>(genotypeSampleNames).size() )
@@ -141,14 +153,14 @@ public class VCFHeader {
      * using this header (i.e., read by the VCFCodec) will have genotypes
      * occurring in the same order
      *
-     * @param genotypeSampleNamesInAppearenceOrder genotype sample names, must iterator in order of appearence
+     * @param genotypeSampleNamesInAppearenceOrder genotype sample names, must iterator in order of appearance
      */
-    private void buildVCFReaderMaps(Collection<String> genotypeSampleNamesInAppearenceOrder) {
+    private void buildVCFReaderMaps(final Collection<String> genotypeSampleNamesInAppearenceOrder) {
         sampleNamesInOrder = new ArrayList<String>(genotypeSampleNamesInAppearenceOrder.size());
         sampleNameToOffset = new HashMap<String, Integer>(genotypeSampleNamesInAppearenceOrder.size());
 
         int i = 0;
-        for ( final String name : genotypeSampleNamesInAppearenceOrder ) {
+        for (final String name : genotypeSampleNamesInAppearenceOrder) {
             sampleNamesInOrder.add(name);
             sampleNameToOffset.put(name, i++);
         }
@@ -157,11 +169,11 @@ public class VCFHeader {
 
 
     /**
-     * Adds a header line to the header metadata.
-     *
-     * @param headerLine Line to add to the existing metadata component.
+     * Sets a header line in the header metadata. This is essentially a Set.add call, which means that
+     * equals() and hashCode() are used to determine whether an additional header line is added or an
+     * existing header line is replaced.
      */
-    public void addMetaDataLine(VCFHeaderLine headerLine) {
+    public void addMetaDataLine(final VCFHeaderLine headerLine) {
         mMetaData.add(headerLine);
         loadMetaDataMaps();
     }
@@ -173,13 +185,45 @@ public class VCFHeader {
         return Collections.unmodifiableList(contigMetaData);
     }
 
+	/**
+	 * Returns the contigs in this VCF file as a SAMSequenceDictionary. Returns null if contigs lines are
+	 * not present in the header. Throws PicardException if one or more contig lines do not have length
+	 * information.
+	 */
+	public SAMSequenceDictionary getSequenceDictionary() {
+		final List<VCFContigHeaderLine> contigHeaderLines = this.getContigLines();
+		if (contigHeaderLines.isEmpty()) return null;
+
+		final List<SAMSequenceRecord> sequenceRecords = new ArrayList<SAMSequenceRecord>(contigHeaderLines.size());
+		for (final VCFContigHeaderLine contigHeaderLine : contigHeaderLines) {
+			sequenceRecords.add(contigHeaderLine.getSAMSequenceRecord());
+		}
+
+		return new SAMSequenceDictionary(sequenceRecords);
+	}
+
+	/**
+	 * Completely replaces the contig records in this header with those in the given SAMSequenceDictionary.
+	 */
+	public void setSequenceDictionary(final SAMSequenceDictionary dictionary) {
+		this.contigMetaData.clear();
+		for (final SAMSequenceRecord record : dictionary.getSequences()) {
+			contigMetaData.add(new VCFContigHeaderLine(record, null));
+		}
+
+		this.mMetaData.addAll(contigMetaData);
+	}
+
+	public VariantContextComparator getVCFRecordComparator() {
+		return new VariantContextComparator(this.getContigLines());
+	}
 
     /**
      * @return all of the VCF FILTER lines in their original file order, or an empty list if none were present
      */
     public List<VCFFilterHeaderLine> getFilterLines() {
         final List<VCFFilterHeaderLine> filters = new ArrayList<VCFFilterHeaderLine>();
-        for ( VCFHeaderLine line : mMetaData ) {
+        for (final VCFHeaderLine line : mMetaData) {
             if ( line instanceof VCFFilterHeaderLine )  {
                 filters.add((VCFFilterHeaderLine)line);
             }
@@ -192,8 +236,8 @@ public class VCFHeader {
      */
     public List<VCFIDHeaderLine> getIDHeaderLines() {
         final List<VCFIDHeaderLine> filters = new ArrayList<VCFIDHeaderLine>();
-        for ( VCFHeaderLine line : mMetaData ) {
-            if ( line instanceof VCFIDHeaderLine )  {
+        for (final VCFHeaderLine line : mMetaData) {
+            if (line instanceof VCFIDHeaderLine)  {
                 filters.add((VCFIDHeaderLine)line);
             }
         }
@@ -205,9 +249,9 @@ public class VCFHeader {
      * or the version is not present
      */
     public void loadVCFVersion() {
-        List<VCFHeaderLine> toRemove = new ArrayList<VCFHeaderLine>();
-        for ( VCFHeaderLine line : mMetaData )
-            if ( VCFHeaderVersion.isFormatString(line.getKey())) {
+        final List<VCFHeaderLine> toRemove = new ArrayList<VCFHeaderLine>();
+        for (final VCFHeaderLine line : mMetaData)
+            if (VCFHeaderVersion.isFormatString(line.getKey())) {
                 toRemove.add(line);
             }
         // remove old header lines for now,
@@ -219,15 +263,15 @@ public class VCFHeader {
      * load the format/info meta data maps (these are used for quick lookup by key name)
      */
     private void loadMetaDataMaps() {
-        for ( VCFHeaderLine line : mMetaData ) {
+        for (final VCFHeaderLine line : mMetaData) {
             if ( line instanceof VCFInfoHeaderLine )  {
-                VCFInfoHeaderLine infoLine = (VCFInfoHeaderLine)line;
+                final VCFInfoHeaderLine infoLine = (VCFInfoHeaderLine)line;
                 addMetaDataMapBinding(mInfoMetaData, infoLine);
             } else if ( line instanceof VCFFormatHeaderLine ) {
-                VCFFormatHeaderLine formatLine = (VCFFormatHeaderLine)line;
+                final VCFFormatHeaderLine formatLine = (VCFFormatHeaderLine)line;
                 addMetaDataMapBinding(mFormatMetaData, formatLine);
             } else if ( line instanceof VCFFilterHeaderLine ) {
-                VCFFilterHeaderLine filterLine = (VCFFilterHeaderLine)line;
+                final VCFFilterHeaderLine filterLine = (VCFFilterHeaderLine)line;
                 mFilterMetaData.put(filterLine.getID(), filterLine);
             } else if ( line instanceof VCFContigHeaderLine ) {
                 contigMetaData.add((VCFContigHeaderLine)line);
@@ -253,7 +297,7 @@ public class VCFHeader {
      * @param line
      * @param <T>
      */
-    private final <T extends VCFCompoundHeaderLine> void addMetaDataMapBinding(final Map<String, T> map, T line) {
+    private <T extends VCFCompoundHeaderLine> void addMetaDataMapBinding(final Map<String, T> map, final T line) {
         final String key = line.getID();
         if ( map.containsKey(key) ) {
             if ( GeneralUtils.DEBUG_MODE_ENABLED ) {
@@ -363,7 +407,7 @@ public class VCFHeader {
      * @param id the header key name
      * @return the meta data line, or null if there is none
      */
-    public VCFInfoHeaderLine getInfoHeaderLine(String id) {
+    public VCFInfoHeaderLine getInfoHeaderLine(final String id) {
         return mInfoMetaData.get(id);
     }
 
@@ -371,7 +415,7 @@ public class VCFHeader {
      * @param id    the header key name
      * @return the meta data line, or null if there is none
      */
-    public VCFFormatHeaderLine getFormatHeaderLine(String id) {
+    public VCFFormatHeaderLine getFormatHeaderLine(final String id) {
         return mFormatMetaData.get(id);
     }
 
@@ -399,7 +443,7 @@ public class VCFHeader {
      * @param key    the header key name
      * @return the meta data line, or null if there is none
      */
-    public VCFHeaderLine getOtherHeaderLine(String key) {
+    public VCFHeaderLine getOtherHeaderLine(final String key) {
         return mOtherMetaData.get(key);
     }
 
@@ -415,7 +459,7 @@ public class VCFHeader {
      * If true additional engine headers will be written to the VCF, otherwise only the walker headers will be output.
      * @param writeEngineHeaders true if additional engine headers will be written to the VCF
      */
-    public void setWriteEngineHeaders(boolean writeEngineHeaders) {
+    public void setWriteEngineHeaders(final boolean writeEngineHeaders) {
         this.writeEngineHeaders = writeEngineHeaders;
     }
 
@@ -431,7 +475,7 @@ public class VCFHeader {
      * If true, and isWriteEngineHeaders also returns true, the command line will be written to the VCF.
      * @param writeCommandLine true if the command line will be written to the VCF
      */
-    public void setWriteCommandLine(boolean writeCommandLine) {
+    public void setWriteCommandLine(final boolean writeCommandLine) {
         this.writeCommandLine = writeCommandLine;
     }
 

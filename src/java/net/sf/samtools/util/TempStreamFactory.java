@@ -51,16 +51,15 @@ public class TempStreamFactory {
      * Otherwise inputStream is returned.
      */
     public InputStream wrapTempInputStream(final InputStream inputStream, final int bufferSize) {
+        InputStream is = IOUtil.maybeBufferInputStream(inputStream, bufferSize);
         if (getSnappyLoader().SnappyAvailable) {
             try {
-                return getSnappyLoader().wrapInputStream(inputStream);
+                return getSnappyLoader().wrapInputStream(is);
             } catch (Exception e) {
                 throw new SAMException("Error creating SnappyInputStream", e);
             }
-        } else if (bufferSize > 0) {
-            return new BufferedInputStream(inputStream, bufferSize);
         } else {
-            return inputStream;
+            return is;
         }
     }
 
@@ -71,16 +70,15 @@ public class TempStreamFactory {
      * Otherwise outputStream is returned.
      */
     public OutputStream wrapTempOutputStream(final OutputStream outputStream, final int bufferSize) {
+        OutputStream os = outputStream;
+        if (bufferSize > 0) os = new BufferedOutputStream(os, bufferSize);
         if (getSnappyLoader().SnappyAvailable) {
             try {
-                return getSnappyLoader().wrapOutputStream(outputStream);
+                os = getSnappyLoader().wrapOutputStream(os);
             } catch (Exception e) {
                 throw new SAMException("Error creating SnappyOutputStream", e);
             }
-        } else if (bufferSize > 0) {
-            return new BufferedOutputStream(outputStream, bufferSize);
-        } else {
-            return outputStream;
         }
+        return os;
     }
 }

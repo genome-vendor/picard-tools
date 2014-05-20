@@ -40,7 +40,7 @@ import java.util.*;
  *
  * The VariantContext object is a single general class system for representing genetic variation data composed of:
  *
- * * Allele: representing single genetic haplotypes (A, T, ATC, -)
+ * * Allele: representing single genetic haplotypes (A, T, ATC, -) (note that null alleles are used here for illustration; see the Allele class for how to represent indels)
  * * Genotype: an assignment of alleles for each chromosome of a single named sample at a particular locus
  * * VariantContext: an abstract class holding all segregating alleles at a locus as well as genotypes
  *    for multiple individuals containing alleles at that locus
@@ -72,10 +72,10 @@ import java.util.*;
  * A [ref] / T at 10
  * GenomeLoc snpLoc = GenomeLocParser.createGenomeLoc("chr1", 10, 10);
  *
- * - / ATC [ref] from 20-23
+ * A / ATC [ref] from 20-23
  * GenomeLoc delLoc = GenomeLocParser.createGenomeLoc("chr1", 20, 22);
  *
- *  // - [ref] / ATC immediately after 20
+ *  // A [ref] / ATC immediately after 20
  * GenomeLoc insLoc = GenomeLocParser.createGenomeLoc("chr1", 20, 20);
  *
  * === Alleles ===
@@ -86,9 +86,8 @@ import java.util.*;
  *
  * Alleles can be either reference or non-reference
  *
- * Example alleles used here:
+ * Examples of alleles used here:
  *
- *   del = new Allele("-");
  *   A = new Allele("A");
  *   Aref = new Allele("A", true);
  *   T = new Allele("T");
@@ -116,10 +115,8 @@ import java.util.*;
  * VariantContext vc = new VariantContext(name, delLoc, Arrays.asList(ATCref, del));
  * </pre>
  *
- * The only 2 things that distinguishes between a insertion and deletion are the reference allele
- * and the location of the variation.  An insertion has a Null reference allele and at least
- * one non-reference Non-Null allele.  Additionally, the location of the insertion is immediately after
- * a 1-bp GenomeLoc (at say 20).
+ * The only thing that distinguishes between an insertion and deletion is which is the reference allele.
+ * An insertion has a reference allele that is smaller than the non-reference allele, and vice versa for deletions.
  *
  * <pre>
  * VariantContext vc = new VariantContext("name", insLoc, Arrays.asList(delRef, ATC));
@@ -236,6 +233,53 @@ public class VariantContext implements Feature { // to enable tribble integratio
 
     /* cached monomorphic value: null -> not yet computed, False, True */
     private Boolean monomorphic = null;
+
+    /*
+* Determine which genotype fields are in use in the genotypes in VC
+* @return an ordered list of genotype fields in use in VC.  If vc has genotypes this will always include GT first
+*/
+    public List<String> calcVCFGenotypeKeys(final VCFHeader header) {
+        final Set<String> keys = new HashSet<String>();
+
+        boolean sawGoodGT = false;
+        boolean sawGoodQual = false;
+        boolean sawGenotypeFilter = false;
+        boolean sawDP = false;
+        boolean sawAD = false;
+        boolean sawPL = false;
+        for (final Genotype g : this.getGenotypes()) {
+            keys.addAll(g.getExtendedAttributes().keySet());
+            if ( g.isAvailable() ) sawGoodGT = true;
+            if ( g.hasGQ() ) sawGoodQual = true;
+            if ( g.hasDP() ) sawDP = true;
+            if ( g.hasAD() ) sawAD = true;
+            if ( g.hasPL() ) sawPL = true;
+            if (g.isFiltered()) sawGenotypeFilter = true;
+        }
+
+        if ( sawGoodQual ) keys.add(VCFConstants.GENOTYPE_QUALITY_KEY);
+        if ( sawDP ) keys.add(VCFConstants.DEPTH_KEY);
+        if ( sawAD ) keys.add(VCFConstants.GENOTYPE_ALLELE_DEPTHS);
+        if ( sawPL ) keys.add(VCFConstants.GENOTYPE_PL_KEY);
+        if ( sawGenotypeFilter ) keys.add(VCFConstants.GENOTYPE_FILTER_KEY);
+
+        List<String> sortedList = ParsingUtils.sortList(new ArrayList<String>(keys));
+
+        // make sure the GT is first
+        if (sawGoodGT) {
+            final List<String> newList = new ArrayList<String>(sortedList.size()+1);
+            newList.add(VCFConstants.GENOTYPE_KEY);
+            newList.addAll(sortedList);
+            sortedList = newList;
+        }
+
+        if (sortedList.isEmpty() && header.hasGenotypingData()) {
+            // this needs to be done in case all samples are no-calls
+            return Collections.singletonList(VCFConstants.GENOTYPE_KEY);
+        } else {
+            return sortedList;
+        }
+    }
 
     // ---------------------------------------------------------------------------------------------------------
     //
@@ -361,8 +405,17 @@ public class VariantContext implements Feature { // to enable tribble integratio
             VariantContextBuilder builder = new VariantContextBuilder(this);
             GenotypesContext newGenotypes = genotypes.subsetToSamples(sampleNames);
 
-            if ( rederiveAllelesFromGenotypes )
-                builder.alleles(allelesOfGenotypes(newGenotypes));
+            if ( rederiveAllelesFromGenotypes ) {
+                Set<Allele> allelesFromGenotypes = allelesOfGenotypes(newGenotypes);
+
+                // ensure original order of genotypes
+                List<Allele> rederivedAlleles = new ArrayList<Allele>(allelesFromGenotypes.size());
+                for (Allele allele : alleles)
+                    if (allelesFromGenotypes.contains(allele))
+                        rederivedAlleles.add(allele);
+
+                builder.alleles(rederivedAlleles);
+            }
             else {
                 builder.alleles(alleles);
             }
@@ -522,7 +575,7 @@ public class VariantContext implements Feature { // to enable tribble integratio
      */
     public boolean isSimpleInsertion() {
         // can't just call !isSimpleDeletion() because of complex indels
-        return getType() == Type.INDEL && isBiallelic() && getReference().length() == 1;
+        return isSimpleIndel() && getReference().length() == 1;
     }
 
     /**
@@ -530,7 +583,19 @@ public class VariantContext implements Feature { // to enable tribble integratio
      */
     public boolean isSimpleDeletion() {
         // can't just call !isSimpleInsertion() because of complex indels
-        return getType() == Type.INDEL && isBiallelic() && getAlternateAllele(0).length() == 1;
+        return isSimpleIndel() && getAlternateAllele(0).length() == 1;
+    }
+
+    /**
+     * @return true if the alleles indicate a simple indel, false otherwise.
+     */
+    public boolean isSimpleIndel() {
+        return getType() == Type.INDEL                   // allelic lengths differ
+                && isBiallelic()                         // exactly 2 alleles
+                && getReference().length() > 0           // ref is not null or symbolic
+                && getAlternateAllele(0).length() > 0    // alt is not null or symbolic
+                && getReference().getBases()[0] == getAlternateAllele(0).getBases()[0]    // leading bases match for both alleles
+                && (getReference().length() == 1 || getAlternateAllele(0).length() == 1);
     }
 
     /**
@@ -1130,14 +1195,14 @@ public class VariantContext implements Feature { // to enable tribble integratio
             }
 
             if ( getAttribute(VCFConstants.ALLELE_COUNT_KEY) instanceof List ) {
-                Collections.sort(observedACs);
-                List reportedACs = (List)getAttribute(VCFConstants.ALLELE_COUNT_KEY);
-                Collections.sort(reportedACs);
+                final List reportedACs = (List)getAttribute(VCFConstants.ALLELE_COUNT_KEY);
                 if ( observedACs.size() != reportedACs.size() )
                     throw new TribbleException.InternalCodecException(String.format("the Allele Count (AC) tag doesn't have the correct number of values for the record at position %s:%d, %d vs. %d", getChr(), getStart(), reportedACs.size(), observedACs.size()));
                 for (int i = 0; i < observedACs.size(); i++) {
-                    if ( Integer.valueOf(reportedACs.get(i).toString()) != observedACs.get(i) )
-                        throw new TribbleException.InternalCodecException(String.format("the Allele Count (AC) tag is incorrect for the record at position %s:%d, %s vs. %d", getChr(), getStart(), reportedACs.get(i), observedACs.get(i)));
+                    // need to cast to int to make sure we don't have an issue below with object equals (earlier bug) - EB
+                    final int reportedAC = Integer.valueOf(reportedACs.get(i).toString());
+                    if ( reportedAC != observedACs.get(i) )
+                        throw new TribbleException.InternalCodecException(String.format("the Allele Count (AC) tag is incorrect for the record at position %s:%d, %s vs. %d", getChr(), getStart(), reportedAC, observedACs.get(i)));
                 }
             } else {
                 if ( observedACs.size() != 1 )
@@ -1306,6 +1371,13 @@ public class VariantContext implements Feature { // to enable tribble integratio
     }
 
     public String toString() {
+        // Note: passing genotypes to String.format() will implicitly decode the genotypes
+        // This may not be desirable, so don't decode by default
+
+        return genotypes.isLazyWithData() ? toStringUnparsedGenotypes() : toStringDecodeGenotypes();
+    }
+
+    public String toStringDecodeGenotypes() {
         return String.format("[VC %s @ %s Q%s of type=%s alleles=%s attr=%s GT=%s",
                 getSource(), contig + ":" + (start - stop == 0 ? start : start + "-" + stop),
                 hasLog10PError() ? String.format("%.2f", getPhredScaledQual()) : ".",
@@ -1313,6 +1385,16 @@ public class VariantContext implements Feature { // to enable tribble integratio
                 ParsingUtils.sortList(this.getAlleles()),
                 ParsingUtils.sortedString(this.getAttributes()),
                 this.getGenotypes());
+    }
+
+    private String toStringUnparsedGenotypes() {
+        return String.format("[VC %s @ %s Q%s of type=%s alleles=%s attr=%s GT=%s",
+                getSource(), contig + ":" + (start - stop == 0 ? start : start + "-" + stop),
+                hasLog10PError() ? String.format("%.2f", getPhredScaledQual()) : ".",
+                this.getType(),
+                ParsingUtils.sortList(this.getAlleles()),
+                ParsingUtils.sortedString(this.getAttributes()),
+                ((LazyGenotypesContext)this.genotypes).getUnparsedGenotypeData());
     }
 
     public String toStringWithoutGenotypes() {

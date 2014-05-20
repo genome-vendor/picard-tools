@@ -25,20 +25,37 @@ package net.sf.picard.fastq;
 
 import net.sf.picard.PicardException;
 import net.sf.picard.io.IoUtil;
+import net.sf.samtools.Defaults;
+import net.sf.samtools.util.IOUtil;
 
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.OutputStream;
 import java.io.PrintStream;
 
 /**
- * @author alecw@broadinstitute.org
+ * In general FastqWriterFactory should be used so that AsyncFastqWriter can be enabled, but there are some
+ * cases in which that behavior is explicitly not wanted.
  */
-class BasicFastqWriter implements FastqWriter {
-    private final File file;
+public class BasicFastqWriter implements FastqWriter {
+    private final String path;
     private final PrintStream writer;
 
-    BasicFastqWriter(final File file) {
-        this.file = file;
-        this.writer = new PrintStream(IoUtil.openFileForWriting(file));
+    public BasicFastqWriter(final File file) {
+        this(file, false);
+    }
+
+    public BasicFastqWriter(final File file, final boolean createMd5) {
+        this(file, new PrintStream(IOUtil.maybeBufferOutputStream(maybeMd5Wrap(file, createMd5))));
+    }
+
+    private BasicFastqWriter(final File file, final PrintStream writer) {
+        this.path = (file != null? file.getAbsolutePath(): "");
+        this.writer = writer;
+    }
+
+    public BasicFastqWriter(final PrintStream writer) {
+        this(null, writer);
     }
 
     public void write(final FastqRecord rec) {
@@ -49,11 +66,23 @@ class BasicFastqWriter implements FastqWriter {
         writer.println(rec.getBaseQualityHeader() == null ? "" : rec.getBaseQualityHeader());
         writer.println(rec.getBaseQualityString());
         if (writer.checkError()) {
-            throw new PicardException("Error in writing file " + file);
+            throw new PicardException("Error in writing fastq file " + path);
         }
+    }
+
+    public void flush() {
+        writer.flush();
     }
 
     public void close() {
         writer.close();
+    }
+
+    private static OutputStream maybeMd5Wrap(final File file, final boolean createMd5) {
+        if (createMd5) {
+            return IoUtil.openFileForMd5CalculatingWriting(file);
+        } else {
+            return IoUtil.openFileForWriting(file);
+        }
     }
 }

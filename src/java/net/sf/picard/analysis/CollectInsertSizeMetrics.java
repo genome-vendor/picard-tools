@@ -34,7 +34,7 @@ import net.sf.picard.cmdline.Usage;
 import net.sf.picard.io.IoUtil;
 import net.sf.picard.metrics.MetricsFile;
 import net.sf.picard.reference.ReferenceSequence;
-import net.sf.picard.util.CollectionUtil;
+import net.sf.samtools.util.CollectionUtil;
 import net.sf.picard.util.Log;
 import net.sf.picard.util.RExecutor;
 import net.sf.samtools.SAMFileHeader;
@@ -51,24 +51,25 @@ public class CollectInsertSizeMetrics extends SinglePassSamProgram {
     private static final String HISTOGRAM_R_SCRIPT = "net/sf/picard/analysis/insertSizeHistogram.R";
     // Usage and parameters
     @Usage
-    public String USAGE = "Reads a SAM or BAM file and writes a file containing metrics about " +
+    public String USAGE = getStandardUsagePreamble() +
+			"Reads a SAM or BAM file and writes a file containing metrics about " +
             "the statistical distribution of insert size (excluding duplicates) " +
             "and generates a histogram plot.\n";
 
-    @Option(shortName="H", doc="File to write insert size histogram chart to")
+    @Option(shortName="H", doc="File to write insert size histogram chart to.")
     public File HISTOGRAM_FILE;
 
     @Option(doc="Generate mean, sd and plots by trimming the data down to MEDIAN + DEVIATIONS*MEDIAN_ABSOLUTE_DEVIATION. " +
-            "This is done because insert size data typically includes enough anomolous values from chimeras and other " +
+            "This is done because insert size data typically includes enough anomalous values from chimeras and other " +
             "artifacts to make the mean and sd grossly misleading regarding the real distribution.")
     public double DEVIATIONS = 10;
 
     @Option(shortName="W", doc="Explicitly sets the histogram width, overriding automatic truncation of histogram tail. " +
-            "Also, when calculating mean and stdev, only bins <= HISTOGRAM_WIDTH will be included.", optional=true)
+            "Also, when calculating mean and standard deviation, only bins <= HISTOGRAM_WIDTH will be included.", optional=true)
     public Integer HISTOGRAM_WIDTH = null;
 
     @Option(shortName="M", doc="When generating the histogram, discard any data categories (out of FR, TANDEM, RF) that have fewer than this " +
-            "percentage of overall reads. (Range: 0 to 1)")
+            "percentage of overall reads. (Range: 0 to 1).")
     public float MINIMUM_PCT = 0.05f;
 
     @Option(shortName="LEVEL", doc="The level(s) at which to accumulate metrics.  ")
@@ -123,7 +124,8 @@ public class CollectInsertSizeMetrics extends SinglePassSamProgram {
             //can happen if user sets MINIMUM_PCT = 0.5, etc.
             log.warn("All data categories were discarded because they contained < " + MINIMUM_PCT +
                      " of the total aligned paired data.");
-            log.warn("Total mapped pairs in all categories: " + ((InsertSizeMetricsCollector.PerUnitInsertSizeMetricsCollector) multiCollector.getAllReadsCollector()).getTotalInserts());
+            final InsertSizeMetricsCollector.PerUnitInsertSizeMetricsCollector allReadsCollector = (InsertSizeMetricsCollector.PerUnitInsertSizeMetricsCollector) multiCollector.getAllReadsCollector();
+            log.warn("Total mapped pairs in all categories: " + (allReadsCollector == null ? allReadsCollector : allReadsCollector.getTotalInserts()));
         }
         else  {
             file.write(OUTPUT);

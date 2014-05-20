@@ -34,6 +34,7 @@ import net.sf.picard.metrics.*;
 import net.sf.picard.reference.ReferenceSequence;
 import net.sf.picard.util.*;
 import net.sf.samtools.*;
+import net.sf.samtools.util.CollectionUtil;
 
 import java.io.File;
 import java.util.*;
@@ -108,6 +109,7 @@ public class CollectRnaSeqMetrics extends SinglePassSamProgram {
         final List<SAMReadGroupRecord> readGroups = header.getReadGroups();
         if (readGroups.size() == 1) {
             this.plotSubtitle = readGroups.get(0).getLibrary();
+            if (null == this.plotSubtitle) this.plotSubtitle = "";
         }
     }
 

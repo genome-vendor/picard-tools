@@ -24,7 +24,21 @@
 package net.sf.picard.sam;
 
 import net.sf.picard.PicardException;
-import net.sf.samtools.*;
+import net.sf.samtools.BamFileIoUtils;
+import net.sf.samtools.Cigar;
+import net.sf.samtools.CigarElement;
+import net.sf.samtools.CigarOperator;
+import net.sf.samtools.SAMFileHeader;
+import net.sf.samtools.SAMFileReader;
+import net.sf.samtools.SAMFileWriter;
+import net.sf.samtools.SAMFileWriterFactory;
+import net.sf.samtools.SAMProgramRecord;
+import net.sf.samtools.SAMReadGroupRecord;
+import net.sf.samtools.SAMRecord;
+import net.sf.samtools.SAMRecordIterator;
+import net.sf.samtools.SAMSequenceRecord;
+import net.sf.samtools.SAMTag;
+import net.sf.samtools.SamPairUtil;
 import net.sf.samtools.util.CloserUtil;
 import org.testng.Assert;
 import org.testng.annotations.DataProvider;
@@ -32,7 +46,12 @@ import org.testng.annotations.Test;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  *  Test for the MergeBamAlignment class
@@ -54,6 +73,7 @@ public class MergeBamAlignmentTest {
     private static final File firstReadAlignedBam_secondHalf = new File(TEST_DATA_DIR, "secondhalf.read1.trimmed.aligned.sam");
     private static final File secondReadAlignedBam_firstHalf = new File(TEST_DATA_DIR, "firsthalf.read2.trimmed.aligned.sam");
     private static final File secondReadAlignedBam_secondHalf = new File(TEST_DATA_DIR, "secondhalf.read2.trimmed.aligned.sam");
+    private static final File supplementalReadAlignedBam = new File(TEST_DATA_DIR, "aligned.supplement.sam");
     private static final File alignedQuerynameSortedBam =
             new File("testdata/net/sf/picard/sam/aligned_queryname_sorted.sam");
     private static final File fasta = new File("testdata/net/sf/picard/sam/merger.fasta");
@@ -64,6 +84,87 @@ public class MergeBamAlignmentTest {
 
     // For EarliestFragment tests, tag placed on the alignments which are expected to be marked as primary.
     private static final String ONE_OF_THE_BEST_TAG = "YB";
+
+    @Test
+    public void testMergerWithSupplemental() throws Exception {
+        final File outputWithSupplemental = File.createTempFile("mergeWithSupplementalTest", ".sam");
+        System.out.println(outputWithSupplemental.getAbsolutePath());
+        // outputWithSupplemental.deleteOnExit();
+        final MergeBamAlignment merger = new MergeBamAlignment();
+        merger.UNMAPPED_BAM = unmappedBam;
+        merger.ALIGNED_BAM = Arrays.asList(supplementalReadAlignedBam);
+        merger.ALIGNED_READS_ONLY = false;
+        merger.CLIP_ADAPTERS = true;
+        merger.IS_BISULFITE_SEQUENCE = false;
+        merger.MAX_INSERTIONS_OR_DELETIONS = 1;
+        merger.PROGRAM_RECORD_ID = "0";
+        merger.PROGRAM_GROUP_VERSION = "1.0";
+        merger.PROGRAM_GROUP_COMMAND_LINE = "align!";
+        merger.PROGRAM_GROUP_NAME = "myAligner";
+        merger.PAIRED_RUN = true;
+        merger.REFERENCE_SEQUENCE = fasta;
+        merger.OUTPUT = outputWithSupplemental;
+        merger.EXPECTED_ORIENTATIONS=Arrays.asList(SamPairUtil.PairOrientation.FR);
+
+        Assert.assertEquals(merger.doWork(), 0, "Merge did not succeed");
+        final SAMFileReader result = new SAMFileReader(outputWithSupplemental);
+
+        final List<Integer> clipAdapterFlags = new ArrayList<Integer>(Arrays.asList(99, 2147, 147, 2195));
+        final List<Integer> foundClipAdapterFlags = new ArrayList<Integer>();
+
+        for (final SAMRecord sam : result) {
+            if (sam.getReadName().equals("both_reads_align_clip_adapter")) {
+                foundClipAdapterFlags.add(sam.getFlags());
+            }
+
+            // This tests that we clip both (a) when the adapter is marked in the unmapped BAM file and
+            // (b) when the insert size is less than the read length
+            if (sam.getReadName().equals("both_reads_align_clip_marked")) {
+                Assert.assertEquals(sam.getReferenceName(), "chr7");
+                if (sam.getReadNegativeStrandFlag()) {
+                    Assert.assertEquals(sam.getCigarString(), "5S96M", "Incorrect CIGAR string for " + sam.getReadName());
+                } else {
+                    Assert.assertEquals(sam.getCigarString(), "96M5S", "Incorrect CIGAR string for " + sam.getReadName());
+                }
+            }
+            else if (sam.getReadName().equals("both_reads_align_clip_adapter")) {
+                Assert.assertEquals(sam.getReferenceName(), "chr7");
+                if (!sam.getSupplementaryAlignmentFlag()) {
+                    if (sam.getReadNegativeStrandFlag()) Assert.assertEquals(sam.getCigarString(), "5S96M", "Incorrect CIGAR string for " + sam.getReadName());
+                    else Assert.assertEquals(sam.getCigarString(), "96M5S", "Incorrect CIGAR string for " + sam.getReadName());
+                }
+            }
+            // This tests that we DON'T clip when we run off the end if there are equal to or more than
+            // MIN_ADAPTER_BASES hanging off the end
+            else if (sam.getReadName().equals("both_reads_align_min_adapter_bases_exceeded")) {
+                Assert.assertEquals(sam.getReferenceName(), "chr7");
+                Assert.assertTrue(!sam.getCigarString().contains("S"),
+                        "Read was clipped when it should not be.");
+            } else if (sam.getReadName().equals("neither_read_aligns_or_present")) {
+                Assert.assertTrue(sam.getReadUnmappedFlag(), "Read should be unmapped but isn't");
+            }
+            // Two pairs in which only the first read should align
+            else if (sam.getReadName().equals("both_reads_present_only_first_aligns") ||
+                    sam.getReadName().equals("read_2_too_many_gaps")) {
+                if (sam.getFirstOfPairFlag()) {
+                    Assert.assertEquals(sam.getReferenceName(), "chr7", "Read should be mapped but isn't");
+                } else {
+                    Assert.assertTrue(sam.getReadUnmappedFlag(), "Read should not be mapped but is");
+                }
+            } else {
+                throw new Exception("Unexpected read name: " + sam.getReadName());
+            }
+        }
+
+        // Make sure that we have the appropriate primary and supplementary reads in the new file
+        Assert.assertEquals(foundClipAdapterFlags.size(), clipAdapterFlags.size());
+        Collections.sort(clipAdapterFlags);
+        Collections.sort(foundClipAdapterFlags);
+        for (int i = 0; i < clipAdapterFlags.size(); i++) {
+            Assert.assertEquals(clipAdapterFlags.get(i), foundClipAdapterFlags.get(i));
+        }
+
+    }
 
     @Test
     public void testMerger() throws Exception {
@@ -239,9 +340,9 @@ public class MergeBamAlignmentTest {
         final File target = File.createTempFile("target", "bam");
         target.deleteOnExit();
         final SamAlignmentMerger merger = new SamAlignmentMerger(unmapped,  target, fasta, null, true, false,
-                 true, false, Arrays.asList(aligned), 1, null, null, null, null, null,
+                false, Arrays.asList(aligned), 1, null, null, null, null, null, null,
                 Arrays.asList(SamPairUtil.PairOrientation.FR), SAMFileHeader.SortOrder.coordinate,
-                new BestMapqPrimaryAlignmentSelectionStrategy());
+                new BestMapqPrimaryAlignmentSelectionStrategy(), false);
 
         merger.mergeAlignment();
         Assert.assertEquals(sorted, !merger.getForceSort());
@@ -264,7 +365,6 @@ public class MergeBamAlignmentTest {
 
         };
     }
-
 
     /**
      * Minimal test of merging data from separate read 1 and read 2 alignments
@@ -297,8 +397,7 @@ public class MergeBamAlignmentTest {
          final SAMFileReader result = new SAMFileReader(output);
          final SAMProgramRecord pg = result.getFileHeader().getProgramRecords().get(0);
 
-
-        for (final SAMRecord sam : result) {
+         for (final SAMRecord sam : result) {
             // Get the alignment record
             final List<File> rFiles = sam.getFirstOfPairFlag() ? r1Align : r2Align;
             SAMRecord alignment = null;
@@ -350,7 +449,7 @@ public class MergeBamAlignmentTest {
     @Test(expectedExceptions = {IllegalStateException.class, PicardException.class})
     public void testOldQuerynameSortFails() throws IOException {
 
-        final File merged = File.createTempFile("merged", ".bam");
+        final File merged = File.createTempFile("merged", BamFileIoUtils.BAM_FILE_EXTENSION);
         merged.deleteOnExit();
 
         final MergeBamAlignment merger = new MergeBamAlignment();
@@ -618,11 +717,11 @@ public class MergeBamAlignmentTest {
         final int readLength = rec.getReadLength();
         if (hitSpec.filtered) {
             // Add two insertions so alignment is filtered.
-            cigar.add(new CigarElement(readLength/2, CigarOperator.M));
+            cigar.add(new CigarElement(readLength-4, CigarOperator.M));
             cigar.add(new CigarElement(1, CigarOperator.I));
             cigar.add(new CigarElement(1, CigarOperator.M));
             cigar.add(new CigarElement(1, CigarOperator.I));
-            cigar.add(new CigarElement(readLength - (readLength/2 + 3), CigarOperator.M));
+            cigar.add(new CigarElement(1, CigarOperator.M));
         } else {
             cigar.add(new CigarElement(readLength, CigarOperator.M));
         }
@@ -693,7 +792,7 @@ public class MergeBamAlignmentTest {
         secondOfPair.add(new HitSpec(false, false, 11));
         secondOfPair.add(new HitSpec(true, false, 30));
         secondOfPair.add(new HitSpec(false, false, 9));
-        ret.add(new Object[]{"Both ends aligned, one end of primary filtered", firstOfPair, secondOfPair, 1, 3, 3, 30});
+        ret.add(new Object[]{"Both ends aligned, one end of primary filtered", firstOfPair, secondOfPair, -1, 3, 3, 30});
 
         firstOfPair = new ArrayList<HitSpec>();
         secondOfPair = new ArrayList<HitSpec>();
@@ -703,7 +802,7 @@ public class MergeBamAlignmentTest {
         secondOfPair.add(new HitSpec(false, false, 11));
         secondOfPair.add(new HitSpec(true, false, 30));
         secondOfPair.add(new HitSpec(false, false, 9));
-        ret.add(new Object[]{"Both ends aligned, one end of primary filtered, one end of secondary filtered", firstOfPair, secondOfPair, 1, 2, 3, 30});
+        ret.add(new Object[]{"Both ends aligned, one end of primary filtered, one end of secondary filtered", firstOfPair, secondOfPair, -1, 2, 3, 30});
 
         firstOfPair = new ArrayList<HitSpec>();
         secondOfPair = new ArrayList<HitSpec>();
@@ -735,7 +834,7 @@ public class MergeBamAlignmentTest {
         secondOfPair.add(new HitSpec(true, true, 30));
         secondOfPair.add(new HitSpec(false, false, 11));
         ret.add(new Object[]{"Both ends aligned, both ends of primary filtered, one end of secondary filtered, but with high mapq",
-                firstOfPair, secondOfPair, 0, 2, 2, 30});
+                firstOfPair, secondOfPair, -1, 2, 2, 30});
 
         firstOfPair = new ArrayList<HitSpec>();
         secondOfPair = new ArrayList<HitSpec>();
@@ -868,19 +967,19 @@ public class MergeBamAlignmentTest {
         hitSpecs.add(new HitSpec(false, true, 10));
         hitSpecs.add(new HitSpec(true, false, 8));
         hitSpecs.add(new HitSpec(false, false, 9));
-        ret.add(new Object[]{"One secondary filtered", hitSpecs, 0, 2, 8});
+        ret.add(new Object[]{"One secondary filtered", hitSpecs, -1, 2, 8});
 
         hitSpecs = new ArrayList<HitSpec>();
         hitSpecs.add(new HitSpec(false, false, 10));
         hitSpecs.add(new HitSpec(true, true, 8));
         hitSpecs.add(new HitSpec(false, false, 11));
-        ret.add(new Object[]{"Primary filtered", hitSpecs, 1, 2, 11});
+        ret.add(new Object[]{"Primary filtered", hitSpecs, -1, 2, 11});
 
         hitSpecs = new ArrayList<HitSpec>();
         hitSpecs.add(new HitSpec(false, false, 11));
         hitSpecs.add(new HitSpec(true, true, 8));
         hitSpecs.add(new HitSpec(false, false, 11));
-        ret.add(new Object[]{"Primary filtered, two secondaries with identical mapq", hitSpecs, 1, 2, 11});
+        ret.add(new Object[]{"Primary filtered, two secondaries with identical mapq", hitSpecs, -1, 2, 11});
 
         hitSpecs = new ArrayList<HitSpec>();
         hitSpecs.add(new HitSpec(false, true, 10));
@@ -1152,10 +1251,10 @@ public class MergeBamAlignmentTest {
      * Test that clipping of FR reads for fragments shorter than read length happens only when it should.
      */
     @Test
-    public  void testShortFragmentClipping() throws Exception {
+    public void testShortFragmentClipping() throws Exception {
         final File output = File.createTempFile("testShortFragmentClipping", ".sam");
         output.deleteOnExit();
-        MergeBamAlignment merger = new MergeBamAlignment();
+        final MergeBamAlignment merger = new MergeBamAlignment();
         merger.UNMAPPED_BAM = new File(TEST_DATA_DIR, "cliptest.unmapped.sam");
         merger.ALIGNED_BAM = Arrays.asList(new File(TEST_DATA_DIR, "cliptest.aligned.sam"));
         merger.ALIGNED_READS_ONLY = false;
@@ -1172,24 +1271,450 @@ public class MergeBamAlignmentTest {
         merger.EXPECTED_ORIENTATIONS=Arrays.asList(SamPairUtil.PairOrientation.FR);
 
         Assert.assertEquals(merger.doWork(), 0, "Merge did not succeed");
-        SAMFileReader result = new SAMFileReader(output);
-        Map<String, SAMRecord> firstReadEncountered = new HashMap<String, SAMRecord>();
+        final SAMFileReader result = new SAMFileReader(output);
+        final Map<String, SAMRecord> firstReadEncountered = new HashMap<String, SAMRecord>();
 
         for (final SAMRecord rec : result) {
             final SAMRecord otherEnd = firstReadEncountered.get(rec.getReadName());
             if (otherEnd == null) {
                 firstReadEncountered.put(rec.getReadName(), rec);
             } else {
-                int fragmentStart = Math.min(rec.getAlignmentStart(), otherEnd.getAlignmentStart());
-                int fragmentEnd = Math.max(rec.getAlignmentEnd(), otherEnd.getAlignmentEnd());
-                String[] readNameFields = rec.getReadName().split(":");
+                final int fragmentStart = Math.min(rec.getAlignmentStart(), otherEnd.getAlignmentStart());
+                final int fragmentEnd = Math.max(rec.getAlignmentEnd(), otherEnd.getAlignmentEnd());
+                final String[] readNameFields = rec.getReadName().split(":");
                 // Read name of each pair includes the expected fragment start and fragment end positions.
-                int expectedFragmentStart = Integer.parseInt(readNameFields[1]);
-                int expectedFragmentEnd = Integer.parseInt(readNameFields[2]);
+                final int expectedFragmentStart = Integer.parseInt(readNameFields[1]);
+                final int expectedFragmentEnd = Integer.parseInt(readNameFields[2]);
                 Assert.assertEquals(fragmentStart, expectedFragmentStart, rec.getReadName());
                 Assert.assertEquals(fragmentEnd, expectedFragmentEnd, rec.getReadName());
             }
         }
         result.close();
+    }
+
+    @Test(dataProvider="testBestFragmentMapqStrategy")
+    public void testBestFragmentMapqStrategy(final String testName, final int[] firstMapQs, final int[] secondMapQs,
+                                             final int expectedFirstMapq, final int expectedSecondMapq) throws Exception {
+        testBestFragmentMapqStrategy(testName + "includeSecondary", firstMapQs, secondMapQs, true, expectedFirstMapq,
+                expectedSecondMapq);
+        testBestFragmentMapqStrategy(testName + "excludeSecondary", firstMapQs, secondMapQs, false, expectedFirstMapq,
+                expectedSecondMapq);
+    }
+
+    private void testBestFragmentMapqStrategy(final String testName, final int[] firstMapQs, final int[] secondMapQs,
+                                              final boolean includeSecondary, final int expectedFirstMapq,
+                                              final int expectedSecondMapq) throws Exception {
+        final File unmappedSam = File.createTempFile("unmapped.", ".sam");
+        unmappedSam.deleteOnExit();
+        final SAMFileWriterFactory factory = new SAMFileWriterFactory();
+        final SAMFileHeader header = new SAMFileHeader();
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+
+        final String readName = "theRead";
+        final SAMRecord firstUnmappedRead = new SAMRecord(header);
+        firstUnmappedRead.setReadName(readName);
+        firstUnmappedRead.setReadString("ACGTACGTACGTACGT");
+        firstUnmappedRead.setBaseQualityString("5555555555555555");
+        firstUnmappedRead.setReadUnmappedFlag(true);
+        firstUnmappedRead.setMateUnmappedFlag(true);
+        firstUnmappedRead.setReadPairedFlag(true);
+        firstUnmappedRead.setFirstOfPairFlag(true);
+
+        final SAMRecord secondUnmappedRead = new SAMRecord(header);
+        secondUnmappedRead.setReadName(readName);
+        secondUnmappedRead.setReadString("TCGAACGTTCGAACTG");
+        secondUnmappedRead.setBaseQualityString("6666666666666666");
+        secondUnmappedRead.setReadUnmappedFlag(true);
+        secondUnmappedRead.setMateUnmappedFlag(true);
+        secondUnmappedRead.setReadPairedFlag(true);
+        secondUnmappedRead.setSecondOfPairFlag(true);
+
+
+
+        final SAMFileWriter unmappedWriter = factory.makeSAMWriter(header, false, unmappedSam);
+        unmappedWriter.addAlignment(firstUnmappedRead);
+        unmappedWriter.addAlignment(secondUnmappedRead);
+        unmappedWriter.close();
+
+        final File alignedSam = File.createTempFile("aligned.", ".sam");
+        alignedSam.deleteOnExit();
+
+        final String sequence = "chr1";
+        // Populate the header with SAMSequenceRecords
+        header.getSequenceDictionary().addSequence(new SAMSequenceRecord(sequence, 1000000));
+
+        final SAMFileWriter alignedWriter = factory.makeSAMWriter(header, false, alignedSam);
+
+        addAlignmentsForBestFragmentMapqStrategy(alignedWriter, firstUnmappedRead, sequence, firstMapQs);
+        addAlignmentsForBestFragmentMapqStrategy(alignedWriter, secondUnmappedRead, sequence, secondMapQs);
+        alignedWriter.close();
+
+
+        final File output = File.createTempFile("testBestFragmentMapqStrategy." + testName, ".sam");
+        output.deleteOnExit();
+        final MergeBamAlignment merger = new MergeBamAlignment();
+        merger.UNMAPPED_BAM = unmappedSam;
+        merger.ALIGNED_BAM = Arrays.asList(alignedSam);
+        merger.ALIGNED_READS_ONLY = false;
+        merger.CLIP_ADAPTERS = true;
+        merger.IS_BISULFITE_SEQUENCE = false;
+        merger.MAX_INSERTIONS_OR_DELETIONS = 1;
+        merger.PROGRAM_RECORD_ID = "0";
+        merger.PROGRAM_GROUP_VERSION = "1.0";
+        merger.PROGRAM_GROUP_COMMAND_LINE = "align!";
+        merger.PROGRAM_GROUP_NAME = "myAligner";
+        merger.PAIRED_RUN = true;
+        merger.REFERENCE_SEQUENCE = new File(TEST_DATA_DIR, "cliptest.fasta");
+        merger.OUTPUT = output;
+        merger.EXPECTED_ORIENTATIONS=Arrays.asList(SamPairUtil.PairOrientation.FR);
+        merger.PRIMARY_ALIGNMENT_STRATEGY = MergeBamAlignment.PrimaryAlignmentStrategy.BestEndMapq;
+        merger.INCLUDE_SECONDARY_ALIGNMENTS = includeSecondary;
+
+        Assert.assertEquals(merger.doWork(), 0, "Merge did not succeed");
+        final SAMFileReader reader = new SAMFileReader(output);
+
+        int numFirstRecords = 0;
+        int numSecondRecords = 0;
+        int firstPrimaryMapq = -1;
+        int secondPrimaryMapq = -1;
+        for (final SAMRecord rec: reader) {
+            Assert.assertTrue(rec.getReadPairedFlag());
+            if (rec.getFirstOfPairFlag()) ++numFirstRecords;
+            else if (rec.getSecondOfPairFlag()) ++ numSecondRecords;
+            else Assert.fail("unpossible!");
+            if (!rec.getReadUnmappedFlag() && !rec.getNotPrimaryAlignmentFlag()) {
+                if (rec.getFirstOfPairFlag()) {
+                    Assert.assertEquals(firstPrimaryMapq, -1);
+                    firstPrimaryMapq = rec.getMappingQuality();
+                } else {
+                    Assert.assertEquals(secondPrimaryMapq, -1);
+                    secondPrimaryMapq = rec.getMappingQuality();
+                }
+            } else if (rec.getNotPrimaryAlignmentFlag()) {
+                Assert.assertTrue(rec.getMateUnmappedFlag());
+            }
+        }
+        reader.close();
+        Assert.assertEquals(firstPrimaryMapq, expectedFirstMapq);
+        Assert.assertEquals(secondPrimaryMapq, expectedSecondMapq);
+        if (!includeSecondary) {
+            Assert.assertEquals(numFirstRecords, 1);
+            Assert.assertEquals(numSecondRecords, 1);
+        } else {
+            // If no alignments for an end, there will be a single unmapped record
+            Assert.assertEquals(numFirstRecords, Math.max(1, firstMapQs.length));
+            Assert.assertEquals(numSecondRecords, Math.max(1, secondMapQs.length));
+        }
+    }
+
+    private void addAlignmentsForBestFragmentMapqStrategy(
+            final SAMFileWriter writer, final SAMRecord unmappedRecord, final String sequence, final int[] mapqs) {
+        boolean reverse = false;
+        int alignmentStart = 1;
+        for (final int mapq : mapqs) {
+            final SAMRecord alignedRecord = new SAMRecord(writer.getFileHeader());
+            alignedRecord.setReadName(unmappedRecord.getReadName());
+            alignedRecord.setReadBases(unmappedRecord.getReadBases());
+            alignedRecord.setBaseQualities(unmappedRecord.getBaseQualities());
+            alignedRecord.setReferenceName(sequence);
+            alignedRecord.setAlignmentStart(alignmentStart);
+            alignmentStart += 10; // Any old position will do
+            alignedRecord.setReadNegativeStrandFlag(reverse);
+            reverse = !reverse;
+            alignedRecord.setCigarString(unmappedRecord.getReadBases().length + "M");
+            alignedRecord.setMappingQuality(mapq);
+            alignedRecord.setReadPairedFlag(unmappedRecord.getReadPairedFlag());
+            alignedRecord.setFirstOfPairFlag(unmappedRecord.getFirstOfPairFlag());
+            alignedRecord.setSecondOfPairFlag(unmappedRecord.getSecondOfPairFlag());
+            alignedRecord.setMateUnmappedFlag(true);
+            writer.addAlignment(alignedRecord);
+        }
+    }
+
+
+    @DataProvider(name="testBestFragmentMapqStrategy")
+    public Object[][] testBestFragmentMapqStrategyDataProvider() {
+        /**
+         *
+         * @param testName
+         * @param firstMapQs
+         * @param secondMapQs
+         * @param expectedFirstMapq
+         * @param expectedSecondMapq
+         */
+        return new Object[][] {
+                {"singleAlignmentFirstEnd", new int[]{12}, new int[0], 12, -1},
+                {"singleAlignmentSecondEnd", new int[0], new int[]{12}, -1, 12},
+                {"singleAlignmentBothEnd", new int[]{13}, new int[]{12}, 13, 12},
+                {"multipleBothEnds1", new int[]{10, 10, 11, 11, 255, 0}, new int[]{14, 11, 1, 14}, 11, 14},
+                {"multipleBothEnds2", new int[]{255, 0, 255}, new int[]{255, 255}, 255, 255},
+                {"multipleFirstEnd", new int[]{10, 10, 11, 11, 12}, new int[0], 12, -1},
+                {"multipleSecondEnd", new int[0], new int[]{10, 10, 0, 11, 12}, -1, 12},
+                {"multipleFirstEndSingleSecondEnd", new int[]{10, 10, 11, 11, 12}, new int[]{255}, 12, 255},
+                {"singleFirstEndMultipleSecondEnd", new int[]{0}, new int[]{10, 10, 11, 11, 12}, 0, 12},
+        };
+    }
+
+    @Test(dataProvider = "testMostDistantStrategy")
+    public void testMostDistantStrategy(final String testName,
+                                        final MostDistantStrategyAlignmentSpec[] firstEndSpecs,
+                                        final MostDistantStrategyAlignmentSpec[] secondEndSpecs) throws Exception {
+        testMostDistantStrategy(testName +".includeSecondary", true, firstEndSpecs, secondEndSpecs);
+        testMostDistantStrategy(testName +".excludeSecondary", false, firstEndSpecs, secondEndSpecs);
+    }
+
+    public void testMostDistantStrategy(final String testName, final boolean includeSecondary,
+        final MostDistantStrategyAlignmentSpec[] firstEndSpecs,
+        final MostDistantStrategyAlignmentSpec[] secondEndSpecs) throws Exception {
+
+        final File unmappedSam = File.createTempFile("unmapped.", ".sam");
+        unmappedSam.deleteOnExit();
+        final SAMFileWriterFactory factory = new SAMFileWriterFactory();
+        final SAMFileHeader header = new SAMFileHeader();
+        header.setSortOrder(SAMFileHeader.SortOrder.queryname);
+
+        final String readName = "theRead";
+        final SAMRecord firstUnmappedRead = new SAMRecord(header);
+        firstUnmappedRead.setReadName(readName);
+        firstUnmappedRead.setReadString("ACGT");
+        firstUnmappedRead.setBaseQualityString("5555");
+        firstUnmappedRead.setReadUnmappedFlag(true);
+        firstUnmappedRead.setMateUnmappedFlag(true);
+        firstUnmappedRead.setReadPairedFlag(true);
+        firstUnmappedRead.setFirstOfPairFlag(true);
+
+        final SAMRecord secondUnmappedRead = new SAMRecord(header);
+        secondUnmappedRead.setReadName(readName);
+        secondUnmappedRead.setReadString("TCGA");
+        secondUnmappedRead.setBaseQualityString("6666");
+        secondUnmappedRead.setReadUnmappedFlag(true);
+        secondUnmappedRead.setMateUnmappedFlag(true);
+        secondUnmappedRead.setReadPairedFlag(true);
+        secondUnmappedRead.setSecondOfPairFlag(true);
+
+
+
+        final SAMFileWriter unmappedWriter = factory.makeSAMWriter(header, false, unmappedSam);
+        unmappedWriter.addAlignment(firstUnmappedRead);
+        unmappedWriter.addAlignment(secondUnmappedRead);
+        unmappedWriter.close();
+
+        final File alignedSam = File.createTempFile("aligned.", ".sam");
+        alignedSam.deleteOnExit();
+
+        final SAMFileReader dictReader = new SAMFileReader(sequenceDict);
+        header.setSequenceDictionary(dictReader.getFileHeader().getSequenceDictionary());
+        dictReader.close();
+
+        final SAMFileWriter alignedWriter = factory.makeSAMWriter(header, false, alignedSam);
+
+        String expectedFirstPrimarySequence = null;
+        int expectedFirstPrimaryAlignmentStart = -1;
+        String expectedSecondPrimarySequence = null;
+        int expectedSecondPrimaryAlignmentStart = -1;
+
+        // Semi-randomly make the reads align to forward or reverse strand.
+        boolean reverse = false;
+        for (final MostDistantStrategyAlignmentSpec spec: firstEndSpecs) {
+            addAlignmentForMostStrategy(alignedWriter, firstUnmappedRead, spec, reverse);
+            reverse = !reverse;
+            if (spec.expectedPrimary) {
+                expectedFirstPrimarySequence = spec.sequence;
+                expectedFirstPrimaryAlignmentStart = spec.alignmentStart;
+            }
+        }
+        for (final MostDistantStrategyAlignmentSpec spec: secondEndSpecs) {
+            addAlignmentForMostStrategy(alignedWriter, secondUnmappedRead, spec, reverse);
+            reverse = !reverse;
+            if (spec.expectedPrimary) {
+                expectedSecondPrimarySequence = spec.sequence;
+                expectedSecondPrimaryAlignmentStart = spec.alignmentStart;
+            }
+        }
+        alignedWriter.close();
+
+
+        final File output = File.createTempFile("testMostDistantStrategy." + testName, ".sam");
+        output.deleteOnExit();
+        final MergeBamAlignment merger = new MergeBamAlignment();
+        merger.UNMAPPED_BAM = unmappedSam;
+        merger.ALIGNED_BAM = Arrays.asList(alignedSam);
+        merger.ALIGNED_READS_ONLY = false;
+        merger.CLIP_ADAPTERS = true;
+        merger.IS_BISULFITE_SEQUENCE = false;
+        merger.MAX_INSERTIONS_OR_DELETIONS = 1;
+        merger.PROGRAM_RECORD_ID = "0";
+        merger.PROGRAM_GROUP_VERSION = "1.0";
+        merger.PROGRAM_GROUP_COMMAND_LINE = "align!";
+        merger.PROGRAM_GROUP_NAME = "myAligner";
+        merger.PAIRED_RUN = true;
+        merger.REFERENCE_SEQUENCE = fasta;
+        merger.OUTPUT = output;
+        merger.EXPECTED_ORIENTATIONS=Arrays.asList(SamPairUtil.PairOrientation.FR);
+        merger.PRIMARY_ALIGNMENT_STRATEGY = MergeBamAlignment.PrimaryAlignmentStrategy.MostDistant;
+        merger.INCLUDE_SECONDARY_ALIGNMENTS = includeSecondary;
+
+        Assert.assertEquals(merger.doWork(), 0, "Merge did not succeed");
+        final SAMFileReader reader = new SAMFileReader(output);
+        int numFirstRecords = 0;
+        int numSecondRecords = 0;
+        String firstPrimarySequence = null;
+        int firstPrimaryAlignmentStart = -1;
+        String secondPrimarySequence = null;
+        int secondPrimaryAlignmentStart = -1;
+        for (final SAMRecord rec: reader) {
+            Assert.assertTrue(rec.getReadPairedFlag());
+            if (rec.getFirstOfPairFlag()) ++numFirstRecords;
+            else if (rec.getSecondOfPairFlag()) ++ numSecondRecords;
+            else Assert.fail("unpossible!");
+            if (!rec.getReadUnmappedFlag() && !rec.getNotPrimaryAlignmentFlag()) {
+                if (rec.getFirstOfPairFlag()) {
+                    Assert.assertEquals(firstPrimaryAlignmentStart, -1);
+                    firstPrimarySequence = rec.getReferenceName();
+                    firstPrimaryAlignmentStart = rec.getAlignmentStart();
+                } else {
+                    Assert.assertEquals(secondPrimaryAlignmentStart, -1);
+                    secondPrimarySequence = rec.getReferenceName();
+                    secondPrimaryAlignmentStart = rec.getAlignmentStart();
+                }
+            } else if (rec.getNotPrimaryAlignmentFlag()) {
+                Assert.assertTrue(rec.getMateUnmappedFlag());
+            }
+        }
+        reader.close();
+        Assert.assertEquals(firstPrimarySequence, expectedFirstPrimarySequence);
+        Assert.assertEquals(firstPrimaryAlignmentStart, expectedFirstPrimaryAlignmentStart);
+        Assert.assertEquals(secondPrimarySequence, expectedSecondPrimarySequence);
+        Assert.assertEquals(secondPrimaryAlignmentStart, expectedSecondPrimaryAlignmentStart);
+        if (!includeSecondary) {
+            Assert.assertEquals(numFirstRecords, 1);
+            Assert.assertEquals(numSecondRecords, 1);
+        } else {
+            // If no alignments for an end, there will be a single unmapped record
+            Assert.assertEquals(numFirstRecords, Math.max(1, firstEndSpecs.length));
+            Assert.assertEquals(numSecondRecords, Math.max(1, secondEndSpecs.length));
+        }
+    }
+
+    private void addAlignmentForMostStrategy(
+            final SAMFileWriter writer, final SAMRecord unmappedRecord, final MostDistantStrategyAlignmentSpec spec,
+            final boolean reverse) {
+        final SAMRecord alignedRecord = new SAMRecord(writer.getFileHeader());
+        alignedRecord.setReadName(unmappedRecord.getReadName());
+        alignedRecord.setReadBases(unmappedRecord.getReadBases());
+        alignedRecord.setBaseQualities(unmappedRecord.getBaseQualities());
+        alignedRecord.setReferenceName(spec.sequence);
+        alignedRecord.setAlignmentStart(spec.alignmentStart);
+        alignedRecord.setReadNegativeStrandFlag(reverse);
+        alignedRecord.setCigarString(unmappedRecord.getReadBases().length + "M");
+        alignedRecord.setMappingQuality(spec.mapQ);
+        alignedRecord.setReadPairedFlag(unmappedRecord.getReadPairedFlag());
+        alignedRecord.setFirstOfPairFlag(unmappedRecord.getFirstOfPairFlag());
+        alignedRecord.setSecondOfPairFlag(unmappedRecord.getSecondOfPairFlag());
+        alignedRecord.setMateUnmappedFlag(true);
+        writer.addAlignment(alignedRecord);
+    }
+
+    private static class MostDistantStrategyAlignmentSpec {
+        public final boolean expectedPrimary;
+        public final String sequence;
+        public final int alignmentStart;
+        public final int mapQ;
+
+        private MostDistantStrategyAlignmentSpec(final boolean expectedPrimary, final String sequence,
+                                                 final int alignmentStart, final int mapQ) {
+            this.expectedPrimary = expectedPrimary;
+            this.sequence = sequence;
+            this.alignmentStart = alignmentStart;
+            this.mapQ = mapQ;
+        }
+
+        private MostDistantStrategyAlignmentSpec(final boolean expectedPrimary, final String sequence,
+                                                 final int alignmentStart) {
+            this(expectedPrimary, sequence, alignmentStart, 10);
+        }
+    }
+
+    @DataProvider(name="testMostDistantStrategy")
+    public Object[][] testMostDistantStrategyDataProvider() {
+        /**
+         * @param testName
+         * @param firstEndSpecs
+         * @param secondEndSpecs
+         */
+        return new Object[][] {
+                {
+                        // There are two ties: {chr1:1 - chr1:89} and {chr4:2 -chr4:90}
+                        // That are disambiguated by MAPQ.
+                        "multipleAlignmentsBothEnds",
+                        new MostDistantStrategyAlignmentSpec[] {
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 1, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 1, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr3", 1, 20),
+                                new MostDistantStrategyAlignmentSpec(true, "chr4", 2, 25),
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 89, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 2, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr3", 3, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr4", 4, 20),
+                        },
+                        new MostDistantStrategyAlignmentSpec[] {
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 1, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 2, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr3", 3, 20),
+                                new MostDistantStrategyAlignmentSpec(true, "chr4", 90, 19),
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 5, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 6, 20),
+                        },
+                },
+                {
+                        "multipleAlignmentsAllChimeric",
+                        new MostDistantStrategyAlignmentSpec[] {
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 1, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 2, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 3, 20),
+                                new MostDistantStrategyAlignmentSpec(true, "chr2", 4, 21),
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 10, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 50, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 60, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 70, 20),
+                        },
+                        new MostDistantStrategyAlignmentSpec[] {
+                                new MostDistantStrategyAlignmentSpec(false, "chr3", 1, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr4", 2, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr3", 3, 20),
+                                new MostDistantStrategyAlignmentSpec(true, "chr4", 11, 25),
+                                new MostDistantStrategyAlignmentSpec(false, "chr3", 50, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr4", 60, 20),
+                        },
+                },
+                {
+                        "multipleAlignmentsFirstEnd",
+                        new MostDistantStrategyAlignmentSpec[] {
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 10, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 10, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr3", 10, 20),
+                                new MostDistantStrategyAlignmentSpec(true, "chr4", 20, 25),
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 80, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 20, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr3", 30, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr4", 40, 20),
+                        },
+                        new MostDistantStrategyAlignmentSpec[0]
+                },
+                {
+                        "multipleAlignmentsSecondEnd",
+                        new MostDistantStrategyAlignmentSpec[0],
+                        new MostDistantStrategyAlignmentSpec[] {
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 10, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 10, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr3", 10, 20),
+                                new MostDistantStrategyAlignmentSpec(true, "chr4", 20, 25),
+                                new MostDistantStrategyAlignmentSpec(false, "chr1", 80, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr2", 20, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr3", 30, 20),
+                                new MostDistantStrategyAlignmentSpec(false, "chr4", 40, 20),
+                        },
+                },
+        };
     }
 }

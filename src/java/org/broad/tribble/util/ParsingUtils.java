@@ -23,11 +23,14 @@
  */
 package org.broad.tribble.util;
 
+import net.sf.samtools.util.HttpUtils;
+
 import java.awt.*;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Constructor;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.*;
@@ -42,7 +45,9 @@ public class ParsingUtils {
 
     // HTML 4.1 color table,  + orange and magenta
     static Map<String, String> colorSymbols = new HashMap();
-    public static Class httpHelperClass = HTTPHelper.class;
+
+    private static final Class defaultUrlHelperClass = RemoteURLHelper.class;
+    public static Class urlHelperClass = defaultUrlHelperClass;
 
     static {
         colorSymbols.put("white", "FFFFFF");
@@ -72,7 +77,7 @@ public class ParsingUtils {
         InputStream inputStream;
 
         if (path.startsWith("http:") || path.startsWith("https:") || path.startsWith("ftp:")) {
-            inputStream = (new HTTPHelper(new URL(path))).openInputStream();
+            inputStream = getURLHelper(new URL(path)).openInputStream();
         } else {
             File file = new File(path);
             inputStream = new FileInputStream(file);
@@ -362,10 +367,81 @@ public class ParsingUtils {
                 // Malformed URLs by definition don't exist
                 return false;
             }
-            URLHelper helper = new HTTPHelper(url);
+            URLHelper helper = getURLHelper(url);
             return helper.exists();
         } else {
             return (new File(resource)).exists();
         }
+    }
+
+    /**
+     * Return the registered URLHelper, constructed with the provided URL
+     * @see #registerHelperClass(Class)
+     * @param url
+     * @return
+     */
+    public static URLHelper getURLHelper(URL url) {
+        try {
+            return getURLHelper(urlHelperClass, url);
+        } catch (Exception e) {
+            return getURLHelper(defaultUrlHelperClass, url);
+        }
+    }
+
+    private static URLHelper getURLHelper(Class helperClass, URL url) {
+        try {
+            Constructor constr = helperClass.getConstructor(URL.class);
+            return (URLHelper) constr.newInstance(url);
+        } catch (Exception e) {
+            String errMsg = "Error instantiating url helper for class: " + helperClass;
+            throw new IllegalStateException(errMsg, e);
+        }
+    }
+
+    /**
+     * Register a {@code URLHelper} class to be used for URL operations. The helper
+     * may be used for both FTP and HTTP operations, so if any FTP URLs are used
+     * the {@code URLHelper} must support it.
+     *
+     * The default helper class is {@link RemoteURLHelper}, which delegates to FTP/HTTP
+     * helpers as appropriate.
+     *
+     * @see URLHelper
+     * @param helperClass Class which implements {@link URLHelper}, and have a constructor
+     *                    which takes a URL as it's only argument.
+     */
+    public static void registerHelperClass(Class helperClass) {
+        if (!URLHelper.class.isAssignableFrom(helperClass)) {
+            throw new IllegalArgumentException("helperClass must implement URLHelper");
+            //TODO check that it has 1 arg constructor of proper type
+        }
+        urlHelperClass = helperClass;
+    }
+
+    /**
+     * Add the {@code indexExtension} to the {@code filepath}, preserving
+     * query string elements if present. Intended for use where {@code filepath}
+     * is a URL. Will behave correctly on regular file paths (just add the extension
+     * to the end)
+     * @param filepath
+     * @param indexExtension
+     * @return
+     */
+    public static String appendToPath(String filepath, String indexExtension) {
+        String tabxIndex = null;
+        URL url = null;
+        try{
+            url = new URL(filepath);
+        }catch (MalformedURLException e){
+            //pass
+        }
+        if (url != null) {
+            String path = url.getPath();
+            String indexPath = path + indexExtension;
+            tabxIndex = filepath.replace(path, indexPath);
+        } else {
+            tabxIndex = filepath + indexExtension;
+        }
+        return tabxIndex;
     }
 }

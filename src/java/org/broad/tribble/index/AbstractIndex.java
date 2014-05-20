@@ -18,29 +18,44 @@
 
 package org.broad.tribble.index;
 
+import org.broad.tribble.Tribble;
 import org.broad.tribble.TribbleException;
 import org.broad.tribble.util.LittleEndianInputStream;
 import org.broad.tribble.util.LittleEndianOutputStream;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.*;
 
 /**
- * User: jrobinso
  * <p/>
  * An abstract implementation of the index class.  This class takes care of the basics that are common
  * to all of the current indexing classes; including the version information, common header properties,
  * and reading and writing the header to disk.
+ *
+ * @author jrobinso
  */
-public abstract class AbstractIndex implements Index {
+public abstract class AbstractIndex implements MutableIndex {
+
+    public enum IndexType {
+        LINEAR(1),
+        INTERVAL_TREE(2);
+        public final int fileHeaderTypeIdentifier;
+
+        IndexType(int fileHeaderTypeIdentifier) {
+            this.fileHeaderTypeIdentifier = fileHeaderTypeIdentifier;
+        }
+    }
 
     // todo -- up to version 4 and use ETag to detect out of date
     // todo -- inode number + size in bytes + modification time
     // todo -- remove MD5
 
     // the current version of the index
-    public static int VERSION = 3;
+    public static final int VERSION = 3;
+    public static final int MAGIC_NUMBER = 1480870228;   //  byte[]{'T', 'I', 'D', 'X'};
+
 
     private final static String NO_MD5 = "";
     private final static long NO_FILE_SIZE = -1L;
@@ -65,29 +80,30 @@ public abstract class AbstractIndex implements Index {
         return indexedFileMD5 != NO_MD5;
     }
 
-    // out listing of properties, order preserved
     private LinkedHashMap<String, String> properties;
 
-    // the hashmap of our chromosome bins
+    /**
+     * the map of our chromosome bins
+     */
     protected LinkedHashMap<String, ChrIndex> chrIndices;
 
-    // any flags we're using:
+    /**
+     * Any flags we're using
+     */
     private static final int SEQUENCE_DICTIONARY_FLAG = 0x8000; // if we have a sequence dictionary in our header
 
     /**
-     * Returns true if this and obj are 'effectively' equivalent data structures.
-     *
      * @param obj
-     * @return
+     * @return true if this and obj are 'effectively' equivalent data structures.
      */
-    public boolean equalsIgnoreProperties(Object obj) {
+    public boolean equalsIgnoreProperties(final Object obj) {
         if (this == obj) return true;
         if (!(obj instanceof AbstractIndex)) {
             System.err.printf("equals: %s not instance of AbstractIndex", obj);
             return false;
         }
 
-        AbstractIndex other = (AbstractIndex) obj;
+        final AbstractIndex other = (AbstractIndex) obj;
 
         if (version != other.version) {
             System.err.printf("equals version: this %d != other %d%n", version, other.version);
@@ -136,16 +152,16 @@ public abstract class AbstractIndex implements Index {
      *
      * @param featureFile the feature file to create an index from
      */
-    public AbstractIndex(String featureFile) {
+    public AbstractIndex(final String featureFile) {
         this(new File(featureFile));
     }
 
-    public AbstractIndex(File featureFile) {
+    public AbstractIndex(final File featureFile) {
         this();
         this.indexedFile = featureFile;
     }
 
-    public AbstractIndex(AbstractIndex parent) {
+    public AbstractIndex(final AbstractIndex parent) {
         this();
         this.version = parent.version;
         this.indexedFile = parent.indexedFile;
@@ -156,6 +172,17 @@ public abstract class AbstractIndex implements Index {
         this.properties = (LinkedHashMap<String, String>) parent.properties.clone();
     }
 
+    protected void validateIndexHeader(final int indexType, final LittleEndianInputStream dis) throws IOException {
+        final int magicNumber = dis.readInt();
+        if (magicNumber != MAGIC_NUMBER) {
+            throw new TribbleException(String.format("Unexpected magic number %d", magicNumber));
+        }
+        final int type = dis.readInt();
+        if (type != indexType) {
+            throw new TribbleException(String.format("Unexpected index type %d", type));
+        }
+
+    }
 
     /**
      * check the current version against the version we read in
@@ -190,28 +217,14 @@ public abstract class AbstractIndex implements Index {
         return version;
     }
 
-    /**
-     * set the MD5 value
-     *
-     * @param md5 the MD5 sum
-     */
-    public void setMD5(String md5) {
+    public void setMD5(final String md5) {
         this.indexedFileMD5 = md5;
     }
 
-    /**
-     * do we have an entry for the target chromosome?
-     *
-     * @param chr the chromosome (or contig) name
-     * @return true if we have an entry; false otherwise
-     */
-    public boolean containsChromosome(String chr) {
+    public boolean containsChromosome(final String chr) {
         return chrIndices.containsKey(chr);
     }
 
-    /**
-     * Should be called after the index is created to finalize all of the header information
-     */
     public void finalizeIndex() {
         // these two functions must be called now because the file may be being written during on the fly indexing
         if (indexedFile != null) {
@@ -226,10 +239,8 @@ public abstract class AbstractIndex implements Index {
      * @param dos the little endian output stream
      * @throws IOException an exception when we can't write to the file
      */
-    private void writeHeader(LittleEndianOutputStream dos) throws IOException {
-        int magicNumber = 1480870228;   //  byte[]{'T', 'I', 'D', 'X'};
-
-        dos.writeInt(magicNumber);
+    private void writeHeader(final LittleEndianOutputStream dos) throws IOException {
+        dos.writeInt(MAGIC_NUMBER);
         dos.writeInt(getType());
         dos.writeInt(version);
         dos.writeString(indexedFile.getAbsolutePath());
@@ -240,7 +251,7 @@ public abstract class AbstractIndex implements Index {
 
         // Properties (Version 3 and later)
         dos.writeInt(properties.size());
-        for (Map.Entry<String, String> prop : properties.entrySet()) {
+        for (final Map.Entry<String, String> prop : properties.entrySet()) {
             dos.writeString(prop.getKey());
             dos.writeString(prop.getValue());
         }
@@ -252,7 +263,7 @@ public abstract class AbstractIndex implements Index {
      * @param dis the little endian input stream
      * @throws IOException if we fail to read from the file at any point
      */
-    private void readHeader(LittleEndianInputStream dis) throws IOException {
+    private void readHeader(final LittleEndianInputStream dis) throws IOException {
 
         version = dis.readInt();
         indexedFile = new File(dis.readString());
@@ -267,8 +278,8 @@ public abstract class AbstractIndex implements Index {
         if (version >= 3) {
             int nProperties = dis.readInt();
             while (nProperties-- > 0) {
-                String key = dis.readString();
-                String value = dis.readString();
+                final String key = dis.readString();
+                final String value = dis.readString();
                 properties.put(key, value);
             }
         }
@@ -281,8 +292,8 @@ public abstract class AbstractIndex implements Index {
      * @param dis
      * @throws IOException
      */
-    private void readSequenceDictionary(LittleEndianInputStream dis) throws IOException {
-        int size = dis.readInt();
+    private void readSequenceDictionary(final LittleEndianInputStream dis) throws IOException {
+        final int size = dis.readInt();
         if (size < 0) throw new IllegalStateException("Size of the sequence dictionary entries is negative");
         for (int x = 0; x < size; x++) {
             dis.readString();
@@ -290,36 +301,25 @@ public abstract class AbstractIndex implements Index {
         }
     }
 
-
-    /**
-     * get the sequence names
-     *
-     * @return a linked hash set of sequence names (Linked to ensure ordering)
-     */
-    public LinkedHashSet<String> getSequenceNames() {
-        return new LinkedHashSet(chrIndices.keySet());
+    public List<String> getSequenceNames() {
+        return new ArrayList<String>(chrIndices.keySet());
     }
 
-    /**
-     * @param chr   the chromosome
-     * @param start the start position, one based
-     * @param end   the end position, one based
-     * @return a list of blocks that include the region defined from start to stop.  Can never return null
-     */
-    public List<Block> getBlocks(String chr, int start, int end) {
+    public List<Block> getBlocks(final String chr, final int start, final int end) {
         return getChrIndex(chr).getBlocks(start, end);
     }
 
-    public List<Block> getBlocks(String chr) {
+    public List<Block> getBlocks(final String chr) {
         return getChrIndex(chr).getBlocks();
     }
 
     /**
      * @param chr
-     * @return return the ChrIndex associated with chr, or throw an IllegalArgumentException if not found
+     * @return return the ChrIndex associated with chr,
+     * @throws IllegalArgumentException if {@code chr} not found
      */
     private final ChrIndex getChrIndex(final String chr) {
-        ChrIndex chrIdx = chrIndices.get(chr);
+        final ChrIndex chrIdx = chrIndices.get(chr);
         if (chrIdx == null) {
             throw new IllegalArgumentException("getBlocks() called with of unknown contig " + chr);
         } else {
@@ -327,29 +327,27 @@ public abstract class AbstractIndex implements Index {
         }
     }
 
-    /**
-     * Store self to a file
-     *
-     * @param stream the input stream
-     * @throws java.io.IOException
-     */
-    public void write(LittleEndianOutputStream stream) throws IOException {
+    public void write(final LittleEndianOutputStream stream) throws IOException {
         writeHeader(stream);
 
         //# of chromosomes
         stream.writeInt(chrIndices.size());
-        for (ChrIndex chrIdx : chrIndices.values()) {
+        for (final ChrIndex chrIdx : chrIndices.values()) {
             chrIdx.write(stream);
         }
     }
 
-    /**
-     * read the index from a little endian input stream
-     *
-     * @param dis the little endian input stream
-     * @throws IOException if we fail to successfully read from disk
-     */
-    public void read(LittleEndianInputStream dis) throws IOException {
+    @Override
+    public void writeBasedOnFeatureFile(final File featureFile) throws IOException {
+        if (!featureFile.isFile()) return;
+        final LittleEndianOutputStream idxStream =
+                new LittleEndianOutputStream(new FileOutputStream(Tribble.indexFile(featureFile)));
+        write(idxStream);
+        idxStream.close();
+
+    }
+
+    public void read(final LittleEndianInputStream dis) throws IOException {
         try {
             readHeader(dis);
 
@@ -357,14 +355,14 @@ public abstract class AbstractIndex implements Index {
             chrIndices = new LinkedHashMap<String, ChrIndex>(nChromosomes);
 
             while (nChromosomes-- > 0) {
-                ChrIndex chrIdx = (ChrIndex) getChrIndexClass().newInstance();
+                final ChrIndex chrIdx = (ChrIndex) getChrIndexClass().newInstance();
                 chrIdx.read(dis);
                 chrIndices.put(chrIdx.getName(), chrIdx);
             }
 
-        } catch (InstantiationException e) {
+        } catch (final InstantiationException e) {
             throw new TribbleException.UnableToCreateCorrectIndexType("Unable to create class " + getChrIndexClass(), e);
-        } catch (IllegalAccessException e) {
+        } catch (final IllegalAccessException e) {
             throw new TribbleException.UnableToCreateCorrectIndexType("Unable to create class " + getChrIndexClass(), e);
         } finally {
             dis.close();
@@ -375,7 +373,7 @@ public abstract class AbstractIndex implements Index {
 
     protected void printIndexInfo() {
         System.out.println(String.format("Index for %s with %d indices", indexedFile, chrIndices.size()));
-        BlockStats stats = getBlockStats(true);
+        final BlockStats stats = getBlockStats(true);
         System.out.println(String.format("  total blocks %d", stats.total));
         System.out.println(String.format("  total empty blocks %d", stats.empty));
     }
@@ -384,16 +382,16 @@ public abstract class AbstractIndex implements Index {
         long total = 0, empty = 0, objects = 0, size = 0;
     }
 
-    protected BlockStats getBlockStats(boolean logDetails) {
-        BlockStats stats = new BlockStats();
-        for (Map.Entry<String, ChrIndex> elt : chrIndices.entrySet()) {
-            List<Block> blocks = elt.getValue().getBlocks();
+    protected BlockStats getBlockStats(final boolean logDetails) {
+        final BlockStats stats = new BlockStats();
+        for (final Map.Entry<String, ChrIndex> elt : chrIndices.entrySet()) {
+            final List<Block> blocks = elt.getValue().getBlocks();
 
             if (blocks != null) {
-                int nBlocks = blocks.size();
+                final int nBlocks = blocks.size();
 
                 int nEmptyBlocks = 0;
-                for (Block b : elt.getValue().getBlocks()) {
+                for (final Block b : elt.getValue().getBlocks()) {
                     if (b.getSize() == 0) nEmptyBlocks++;
                 }
                 stats.empty += nEmptyBlocks;
@@ -408,18 +406,16 @@ public abstract class AbstractIndex implements Index {
     }
 
     protected String statsSummary() {
-        BlockStats stats = getBlockStats(false);
+        final BlockStats stats = getBlockStats(false);
         return String.format("%12d blocks (%12d empty (%.2f%%))", stats.total, stats.empty, (100.0 * stats.empty) / stats.total);
     }
 
-    /**
-     * add properties to the the existing property listing;
-     *
-     * @param key   the key
-     * @param value the value, stored as a string, though it may represent an different underlying type
-     */
-    public void addProperty(String key, String value) {
+    public void addProperty(final String key, final String value) {
         properties.put(key, value);
+    }
+
+    public void addProperties(final Map<String, String> properties) {
+        this.properties.putAll(properties);
     }
 
     /**
@@ -434,7 +430,7 @@ public abstract class AbstractIndex implements Index {
     /**
      * get the index type
      *
-     * @return
+     * @return The index type
      */
     protected abstract int getType();
 

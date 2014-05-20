@@ -25,16 +25,16 @@
 
 package org.broadinstitute.variant.vcf;
 
+import net.sf.samtools.util.BlockCompressedInputStream;
 import org.broad.tribble.AsciiFeatureCodec;
 import org.broad.tribble.Feature;
 import org.broad.tribble.NameAwareCodec;
 import org.broad.tribble.TribbleException;
-import org.broad.tribble.readers.LineReader;
-import net.sf.samtools.util.BlockCompressedInputStream;
 import org.broad.tribble.util.ParsingUtils;
 import org.broadinstitute.variant.utils.GeneralUtils;
 import org.broadinstitute.variant.variantcontext.*;
 
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -87,6 +87,12 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
      */
     protected boolean doOnTheFlyModifications = true;
 
+    /**
+     * If non-null, we will replace the sample name read from the VCF header with this sample name. This feature works
+     * only for single-sample VCFs.
+     */
+    protected String remappedSampleName = null;
+
     protected AbstractVCFCodec() {
         super(VariantContext.class);
     }
@@ -114,12 +120,6 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
             return createGenotypeMap((String) data, alleles, contig, start);
         }
     }
-
-    /**
-     * @param reader the line reader to take header lines from
-     * @return the number of header lines
-     */
-    public abstract Object readHeader(LineReader reader);
 
     /**
      * parse the filter string, first checking to see if we already have parsed it in a previous attempt
@@ -172,6 +172,20 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
                 if ( sawFormatTag && sampleNames.size() == 0 )
                     throw new TribbleException.InvalidHeader("The FORMAT field was provided but there is no genotype/sample data");
 
+                // If we're performing sample name remapping and there is exactly one sample specified in the header, replace
+                // it with the remappedSampleName. Throw an error if there are 0 or multiple samples and remapping was requested
+                // for this file.
+                if ( remappedSampleName != null ) {
+                    // We currently only support on-the-fly sample name remapping for single-sample VCFs
+                    if ( sampleNames.isEmpty() || sampleNames.size() > 1 ) {
+                        throw new TribbleException(String.format("Cannot remap sample name to %s because %s samples are specified in the VCF header, and on-the-fly sample name remapping is only supported for single-sample VCFs",
+                                                                 remappedSampleName, sampleNames.isEmpty() ? "no" : "multiple"));
+                    }
+
+                    sampleNames.clear();
+                    sampleNames.add(remappedSampleName);
+                }
+
             } else {
                 if ( str.startsWith(VCFConstants.INFO_HEADER_START) ) {
                     final VCFInfoHeaderLine info = new VCFInfoHeaderLine(str.substring(7), version);
@@ -202,6 +216,21 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
         return this.header;
     }
 
+	/**
+	 * Explicitly set the VCFHeader on this codec. This will overwrite the header read from the file
+	 * and the version state stored in this instance; conversely, reading the header from a file will
+	 * overwrite whatever is set here. The returned header may not be identical to the header argument
+	 * since the header lines may be "repaired" (i.e., rewritten) if doOnTheFlyModifications is set.
+	 */
+	public VCFHeader setVCFHeader(final VCFHeader header, final VCFHeaderVersion version) {
+		this.version = version;
+
+		if (this.doOnTheFlyModifications) this.header = VCFStandardHeaderLines.repairStandardHeaderLines(header);
+		else this.header = header;
+
+		return this.header;
+	}
+
     /**
      * the fast decode function
      * @param line the line of text for the record
@@ -220,7 +249,7 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
         return decodeLine(line, true);
     }
 
-    private final VariantContext decodeLine(final String line, final boolean includeGenotypes) {
+    private VariantContext decodeLine(final String line, final boolean includeGenotypes) {
         // the same line reader is not used for parsing the header and parsing lines, if we see a #, we've seen a header line
         if (line.startsWith(VCFHeader.HEADER_INDICATOR)) return null;
 
@@ -230,9 +259,10 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
         if (parts == null)
             parts = new String[Math.min(header.getColumnCount(), NUM_STANDARD_FIELDS+1)];
 
-        int nParts = ParsingUtils.split(line, parts, VCFConstants.FIELD_SEPARATOR_CHAR, true);
+        final int nParts = ParsingUtils.split(line, parts, VCFConstants.FIELD_SEPARATOR_CHAR, true);
 
-        // if we have don't have a header, or we have a header with no genotyping data check that we have eight columns.  Otherwise check that we have nine (normal colummns + genotyping data)
+        // if we have don't have a header, or we have a header with no genotyping data check that we
+        // have eight columns.  Otherwise check that we have nine (normal columns + genotyping data)
         if (( (header == null || !header.hasGenotypingData()) && nParts != NUM_STANDARD_FIELDS) ||
                 (header != null && header.hasGenotypingData() && nParts != (NUM_STANDARD_FIELDS + 1)) )
             throw new TribbleException("Line " + lineNo + ": there aren't enough columns for line " + line + " (we expected " + (header == null ? NUM_STANDARD_FIELDS : NUM_STANDARD_FIELDS + 1) +
@@ -361,11 +391,11 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
         Map<String, Object> attributes = new HashMap<String, Object>();
 
         if ( infoField.length() == 0 )
-            generateException("The VCF specification requires a valid info field");
+            generateException("The VCF specification requires a valid (non-zero length) info field");
 
         if ( !infoField.equals(VCFConstants.EMPTY_INFO_FIELD) ) {
             if ( infoField.indexOf("\t") != -1 || infoField.indexOf(" ") != -1 )
-                generateException("The VCF specification does not allow for whitespace in the INFO field");
+                generateException("The VCF specification does not allow for whitespace in the INFO field. Offending field value was \"" + infoField + "\"");
 
             int infoFieldSplitSize = ParsingUtils.split(infoField, infoFieldArray, VCFConstants.INFO_FIELD_SEPARATOR_CHAR, false);
             for (int i = 0; i < infoFieldSplitSize; i++) {
@@ -514,7 +544,7 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
      */
     private static void checkAllele(String allele, boolean isRef, int lineNo) {
         if ( allele == null || allele.length() == 0 )
-            generateException("Empty alleles are not permitted in VCF records", lineNo);
+            generateException(generateExceptionTextForBadAlleleBases(""), lineNo);
 
         if ( GeneralUtils.DEBUG_MODE_ENABLED && MAX_ALLELE_SIZE_BEFORE_WARNING != -1 && allele.length() > MAX_ALLELE_SIZE_BEFORE_WARNING ) {
             System.err.println(String.format("Allele detected with length %d exceeding max size %d at approximately line %d, likely resulting in degraded VCF processing performance", allele.length(), MAX_ALLELE_SIZE_BEFORE_WARNING, lineNo));
@@ -531,11 +561,25 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
                         " convert your file to VCF4 using VCFTools, available at http://vcftools.sourceforge.net/index.html", lineNo);
 
             if (!Allele.acceptableAlleleBases(allele))
-                generateException("Unparsable vcf record with allele " + allele, lineNo);
+                generateException(generateExceptionTextForBadAlleleBases(allele), lineNo);
 
             if ( isRef && allele.equals(VCFConstants.EMPTY_ALLELE) )
                 generateException("The reference allele cannot be missing", lineNo);
         }
+    }
+
+    /**
+     * Generates the exception text for the case where the allele string contains unacceptable bases.
+     *
+     * @param allele   non-null allele string
+     * @return non-null exception text string
+     */
+    private static String generateExceptionTextForBadAlleleBases(final String allele) {
+        if ( allele.length() == 0 )
+            return "empty alleles are not permitted in VCF records";
+        if ( allele.contains("[") || allele.contains("]") || allele.contains(":") || allele.contains(".") )
+            return "VCF support for complex rearrangements with breakends has not yet been implemented";
+        return "unparsable vcf record with allele " + allele;
     }
 
     /**
@@ -674,8 +718,8 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
             }
 
             // check to make sure we found a genotype field if our version is less than 4.1 file
-            if ( version != VCFHeaderVersion.VCF4_1 && genotypeAlleleLocation == -1 )
-                generateException("Unable to find the GT field for the record; the GT field is required in VCF4.0");
+            if ( ! version.isAtLeastAsRecentAs(VCFHeaderVersion.VCF4_1) && genotypeAlleleLocation == -1 )
+                generateException("Unable to find the GT field for the record; the GT field is required before VCF4.1");
             if ( genotypeAlleleLocation > 0 )
                 generateException("Saw GT field at position " + genotypeAlleleLocation + ", but it must be at the first position for genotypes when present");
 
@@ -694,13 +738,16 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
         return new LazyGenotypesContext.LazyData(genotypes, header.getSampleNamesInOrder(), header.getSampleNameToOffset());
     }
 
-
-    private final static String[] INT_DECODE_ARRAY = new String[10000];
-    private final static int[] decodeInts(final String string) {
+    private final String[] INT_DECODE_ARRAY = new String[10000];
+    private final int[] decodeInts(final String string) {
         final int nValues = ParsingUtils.split(string, INT_DECODE_ARRAY, ',');
         final int[] values = new int[nValues];
-        for ( int i = 0; i < nValues; i++ )
-            values[i] = Integer.valueOf(INT_DECODE_ARRAY[i]);
+        try {
+            for ( int i = 0; i < nValues; i++ )
+                values[i] = Integer.valueOf(INT_DECODE_ARRAY[i]);
+        } catch (final NumberFormatException e) {
+            return null;
+        }
         return values;
     }
 
@@ -713,6 +760,16 @@ public abstract class AbstractVCFCodec extends AsciiFeatureCodec<VariantContext>
         doOnTheFlyModifications = false;
     }
 
+    /**
+     * Replaces the sample name read from the VCF header with the remappedSampleName. Works
+     * only for single-sample VCFs -- attempting to perform sample name remapping for multi-sample
+     * VCFs will produce an Exception.
+     *
+     * @param remappedSampleName replacement sample name for the sample specified in the VCF header
+     */
+    public void setRemappedSampleName( final String remappedSampleName ) {
+        this.remappedSampleName = remappedSampleName;
+    }
 
     protected void generateException(String message) {
         throw new TribbleException(String.format("The provided VCF file is malformed at approximately line number %d: %s", lineNo, message));
