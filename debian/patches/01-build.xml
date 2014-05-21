@@ -7,16 +7,23 @@ Origin: vendor
 Forwarded: no
 --- a/build.xml
 +++ b/build.xml
-@@ -51,7 +51,7 @@
-     <property name="command_tmp" value=".command_tmp"/>
-     <property name="command-line-html-dir" value="${dist}/html"/>
-     <property name="testng.verbosity" value="2"/>
--    <property name="contracts.jar" value="${lib}/cofoja-1.0-r139.jar"/>
-+    <property name="contracts.jar" value="/usr/share/java/cofoja.jar"/>
+@@ -37,7 +37,6 @@
+     <property name="reports" value="dist/test"/>
+     <property name="test.output" value="dist/test"/>
+ 
+-    <property name="javac.target" value="1.6"/>
+     <property name="javac.debug" value="true"/>
+ 
+     <!-- Get SVN revision, if available, otherwise leave it blank.  -->
+@@ -53,7 +52,6 @@
+     <property name="test.debug.port" value="5005" />  <!-- override on the command line if desired -->
  
      <property environment="env"/>
+-    <property name="java6.home" value="${env.JAVA6_HOME}"/>
  
-@@ -72,6 +72,11 @@
+     <condition  property="isUnix">
+         <os family="unix"/>
+@@ -73,15 +71,16 @@
              <fileset dir="${lib}">
                  <include name="**/*.jar"/>
              </fileset>
@@ -28,29 +35,58 @@ Forwarded: no
          </path>
          <path  id="metrics.classpath">
              <pathelement path="${classpath}"/>
-@@ -210,6 +214,6 @@
+             <pathelement location="${classes}"/>
+         </path>
+-
+-        <path id="java6.lib.ref">
+-            <fileset dir="${java6.home}/lib" includes="*.jar"/>
+-        </path>
+     </target>
+ 
+     <!-- CLEAN -->
+@@ -207,7 +206,6 @@
          <jar destfile="${dist}/picard-${picard-version}.jar" compress="no">
              <fileset dir="${classes}" includes ="net/sf/picard/**/*.*"/>
+             <fileset dir="${src.scripts}" includes="**/*.R"/>
 -            <zipfileset src="${lib}/apache-ant-1.8.2-bzip2.jar"/>
-+            <fileset dir="${src.scripts}" includes="**/*.R"/>
              <manifest>
                  <attribute name="Implementation-Version" value="${picard-version}(${repository.revision})"/>
                  <attribute name="Implementation-Vendor" value="Broad Institute"/>
-@@ -217,6 +221,8 @@
+@@ -215,6 +213,8 @@
          </jar>
      </target>
  
-+<target name="jar" depends="sam-jar, picard-jar" />
++    <target name="jar" depends="sam-jar, picard-jar" />
 +
      <target name="tribble-jar" depends="compile"
              description="Builds tribble-${tribble-version}.jar for inclusion in other projects">
          <mkdir dir="${dist}"/>
-@@ -453,7 +459,8 @@
-                    debug="${javac.debug}"
+@@ -357,9 +357,6 @@
+     <target name="all" depends="compile, sam-jar, picard-jar, tribble-jar, variant-jar, package-commands, document-standard-options" description="Default build target">
+         <zip zipfile="${dist}/picard-tools-${picard-version}.zip">
+             <zipfileset dir="${dist}" includes="*.jar" prefix="picard-tools-${picard-version}"/>
+-            <zipfileset dir="${lib}" includes="snappy*.jar"/>
+-            <!-- distribute libJniDeflater.so in same directory as jarfiles-->
+-            <zipfileset dir="${lib}/jni" includes="*" prefix="picard-tools-${picard-version}"/>
+         </zip>
+     </target>
+ 
+@@ -478,8 +475,7 @@
+                    srcdir="${src}"
+                    includes="@{includes}"
+                    excludes="@{excludes}"
+-                   source="${javac.target}"
+-                   target="${javac.target}">
++                   executable="javac">
+                 <classpath refid="@{compile.classpath}"/>
+                 <compilerarg line="@{compiler.args}" />
+                 <!-- ensure that Java 6 bootclasspath is used -->
+@@ -501,8 +497,7 @@
                     srcdir="${src.test.java}"
                     includes="@{includes}"
--                   excludes="@{excludes}">
-+                   excludes="@{excludes}"
+                    excludes="@{excludes}"
+-                   source="${javac.target}"
+-                   target="${javac.target}">
 +                   executable="javac">
                  <classpath>
                      <path refid="classpath"/>

@@ -1,3 +1,9 @@
+libpicard-tools1.113-java (1.113-1) unstable; urgency=low
+
+  * New upstream release
+
+ -- The Genome Institute <gmt@genome.wustl.edu>  Tue, 20 May 2014 15:36:46 -0500
+
 libpicard-tools1.85-java (1.85-2) unstable; urgency=low
 
   * Add dependency on ant to get Ant's bzip2 library
