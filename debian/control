@@ -1,18 +1,19 @@
-Source: libpicard-tools1.113-java
+Source: libpicard-tools1.122-java
 Section: science
 Priority: optional
 Maintainer: The Genome Institute <gmt@genome.wustl.edu>
 Uploaders: Ian Ferguson <iferguso@genome.wustl.edu>
-Build-Depends: ant, default-jdk, libsnappy1.0.3-java, testng, debhelper (>= 7.0.50~), libbcel-java, libcommons-jexl2-java, libcofoja-java, subversion
+Build-Depends: ant, debhelper (>= 7.0.50~), default-jdk, git-core, libbcel-java,
+ libcommons-jexl2-java, libsnappy-dev, libsnappy1, libsnappy1.0.3-java, testng
 Standards-Version: 3.9.3
 Homepage: http://picard.sourceforge.net/
 Vcs-Git: git://github.com/genome-vendor/picard-tools.git
 Vcs-Browser: https://github.com/genome-vendor/picard-tools
 
-Package: libpicard-tools1.113-java
+Package: libpicard-tools1.122-java
 Architecture: all
-Depends: default-jre | java6-runtime, ${misc:Depends},
- ${python:Depends}, libcommons-jexl2-java, ant
+Depends: default-jre | java6-runtime, libcommons-jexl2-java,
+ libsnappy1.0.3-java, ${misc:Depends}
 Recommends: libsnappy1.0.3-java
 Suggests: python, r-base-core
 Conflicts: picard-tools
@@ -20,17 +21,32 @@ Description: Command line tools to manipulate SAM and BAM files
  SAM (Sequence Alignment/Map) format is a generic format for storing
  large nucleotide sequence alignments. Picard Tools includes these
  utilities to manipulate SAM and BAM files:
- BamToBfq                        IlluminaBasecallsToSam
- BuildBamIndex                   MarkDuplicates
- CalculateHsMetrics              MeanQualityByCycle
- CleanSam                        MergeBamAlignment
- CollectAlignmentSummaryMetrics  MergeSamFiles
- CollectGcBiasMetrics            NormalizeFasta
- CollectInsertSizeMetrics        QualityScoreDistribution
- CollectRnaSeqMetrics            ReplaceSamHeader
- CompareSAMs                     RevertSam
- CreateSequenceDictionary        SamFormatConverter
- ExtractIlluminaBarcodes         SamToFastq
- EstimateLibraryComplexity       SortSam
- FastqToSam                      ValidateSamFile
- FixMateInformation              ViewSam
+ AddCommentsToBam                  GenotypeConcordance
+ AddOrReplaceReadGroups            IlluminaBasecallsToFastq
+ BamIndexStats                     IlluminaBasecallsToSam
+ BamToBfq                          IntervalListTools
+ BedToIntervalList                 MakeSitesOnlyVcf
+ BuildBamIndex                     MarkDuplicates
+ CalculateHsMetrics                MarkDuplicatesWithMateCigar
+ CheckIlluminaDirectory            MarkIlluminaAdapters
+ CleanSam                          MeanQualityByCycle
+ CollectAlignmentSummaryMetrics    MergeBamAlignment
+ CollectBaseDistributionByCycle    MergeSamFiles
+ CollectGcBiasMetrics              MergeVcfs
+ CollectHiSeqXPfFailMetrics        NormalizeFasta
+ CollectInsertSizeMetrics          QualityScoreDistribution
+ CollectMultipleMetrics            ReorderSam
+ CollectRnaSeqMetrics              ReplaceSamHeader
+ CollectTargetedPcrMetrics         RevertOriginalBaseQualitiesAndAddMateCigar
+ CollectWgsMetrics                 RevertSam
+ CompareSAMs                       SamFormatConverter
+ CreateSequenceDictionary          SamToFastq
+ DownsampleSam                     SortSam
+ EstimateLibraryComplexity         SortVcf
+ ExtractIlluminaBarcodes           SplitVcfs
+ ExtractSequences                  UpdateVcfSequenceDictionary
+ FastqToSam                        ValidateSamFile
+ FifoBuffer                        VcfFormatConverter
+ FilterSamReads                    VcfToIntervalList
+ FixMateInformation                ViewSam
+ GatherBamFiles

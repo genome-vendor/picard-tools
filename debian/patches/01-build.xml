@@ -1,93 +1,117 @@
 Description: Modifies the upstream build system.
- This patch changes the path to the javac compiler, enables the use
- of the system's testng library, and adds a new target for preparing
- the sam and picard jar files and installing the extra R scripts
- from src/scripts/net/sf/picard/analysis/.
+ This patch enables the use of the system's java libraries instead of the
+ copies included in lib/.
 Origin: vendor
 Forwarded: no
 --- a/build.xml
 +++ b/build.xml
-@@ -37,7 +37,6 @@
-     <property name="reports" value="dist/test"/>
-     <property name="test.output" value="dist/test"/>
- 
--    <property name="javac.target" value="1.6"/>
-     <property name="javac.debug" value="true"/>
- 
-     <!-- Get SVN revision, if available, otherwise leave it blank.  -->
-@@ -53,7 +52,6 @@
-     <property name="test.debug.port" value="5005" />  <!-- override on the command line if desired -->
- 
-     <property environment="env"/>
--    <property name="java6.home" value="${env.JAVA6_HOME}"/>
- 
-     <condition  property="isUnix">
-         <os family="unix"/>
-@@ -73,15 +71,16 @@
-             <fileset dir="${lib}">
+@@ -30,7 +30,6 @@
+     <property name="src.test" value="src/tests"/>
+     <property name="src.test.java" value="${src.test}/java"/>
+     <property name="src.www" value="src/www"/>
+-    <property name="lib" value="lib"/>
+     <property name="dist" value="dist"/>
+     <property name="classes" value="classes"/>
+     <property name="classes.test" value="testclasses"/>
+@@ -75,18 +74,14 @@
+     <!-- INIT -->
+     <target name="init">
+         <path id="classpath">
+-            <fileset dir="${lib}">
+-                <include name="**/*.jar"/>
+-            </fileset>
+             <fileset dir="${htsjdk_lib_dir}">
+                 <include name="*.jar"/>
                  <include name="**/*.jar"/>
              </fileset>
-+            <pathelement path="/usr/share/java/testng.jar"/>
-+            <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
-+            <pathelement path="/usr/share/java/cofoja.jar"/>
-+            <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
+-            <!-- for the specific HTSJDK library JARs -->
+-            <fileset dir="${htsjdk}/lib">
+-                <include name="*.jar"/>
+-                <include name="**/*.jar"/>
+-            </fileset>
 +            <pathelement path="/usr/share/java/commons-jexl2.jar"/>
++            <pathelement path="/usr/share/java/commons-logging.jar"/>
++            <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
++            <pathelement path="/usr/share/java/testng.jar"/>
          </path>
-         <path  id="metrics.classpath">
+         <path id="metrics.classpath">
              <pathelement path="${classpath}"/>
-             <pathelement location="${classes}"/>
-         </path>
--
--        <path id="java6.lib.ref">
--            <fileset dir="${java6.home}/lib" includes="*.jar"/>
--        </path>
-     </target>
+@@ -138,7 +133,6 @@
+         <ant antfile="build.xml" dir="${htsjdk}" target="all" inheritall="false"/>
+         <copy todir="${htsjdk_lib_dir}">
+             <fileset dir="${htsjdk}/dist" includes="**/*-*.jar"/>
+-            <fileset dir="${htsjdk}/lib" includes="*.jar"/>
+         </copy>
+         <copy todir="${dist}">
+             <fileset dir="${htsjdk}/dist" includes="**/*.jar" excludes="**/*-*.jar"/>
+@@ -267,15 +261,13 @@
+                 excludepackagenames="htsjdk*">
+             <classpath>
+                 <pathelement location="${java.home}/../lib/tools.jar"/>
+-                <fileset dir="${lib}">
+-                    <include name="**/*.jar"/>
+-                </fileset>
+                 <fileset dir="${htsjdk}/dist">
+                     <include name="**/*.jar"/>
+                 </fileset>
+-                <fileset dir="${htsjdk}/lib">
+-                    <include name="**/*.jar"/>
+-                </fileset>
++                <pathelement path="/usr/share/java/commons-jexl2.jar"/>
++                <pathelement path="/usr/share/java/commons-logging.jar"/>
++                <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
++                <pathelement path="/usr/share/java/testng.jar"/>
+             </classpath>
+             <link href="http://java.sun.com/j2se/1.6.0/docs/api/"/>
+             <fileset dir="${src}" defaultexcludes="yes">
+@@ -295,12 +287,10 @@
+                 excludepackagenames="picard*">
+             <classpath>
+                 <pathelement location="${java.home}/../lib/tools.jar"/>
+-                <fileset dir="${lib}">
+-                    <include name="**/*.jar"/>
+-                </fileset>
+-                <fileset dir="${htsjdk}/lib">
+-                    <include name="**/*.jar"/>
+-                </fileset>
++                <pathelement path="/usr/share/java/commons-jexl2.jar"/>
++                <pathelement path="/usr/share/java/commons-logging.jar"/>
++                <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
++                <pathelement path="/usr/share/java/testng.jar"/>
+             </classpath>
+             <link href="http://java.sun.com/j2se/1.6.0/docs/api/"/>
+             <fileset dir="${htsjdk_src}" defaultexcludes="yes">
+@@ -314,9 +304,10 @@
+                  failonerror="true" verbose="true">
+             <classpath>
+                 <pathelement location="${java.home}/../lib/tools.jar"/>
+-                <fileset dir="${lib}">
+-                    <include name="**/*.jar"/>
+-                </fileset>
++                <pathelement path="/usr/share/java/commons-jexl2.jar"/>
++                <pathelement path="/usr/share/java/commons-logging.jar"/>
++                <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
++                <pathelement path="/usr/share/java/testng.jar"/>
+                 <fileset dir="${htsjdk}/dist">
+                     <include name="**/*.jar"/>
+                 </fileset>
+@@ -341,9 +332,6 @@
+             <fileset dir="${htsjdk_lib_dir}">
+                 <include name="*.jar"/>
+             </fileset>
+-            <fileset dir="${lib}">
+-                <include name="*.jar"/>
+-            </fileset>
+         </unzip>
+         <delete dir="${command-line-html-dir}"/>
  
-     <!-- CLEAN -->
-@@ -207,7 +206,6 @@
-         <jar destfile="${dist}/picard-${picard-version}.jar" compress="no">
-             <fileset dir="${classes}" includes ="net/sf/picard/**/*.*"/>
-             <fileset dir="${src.scripts}" includes="**/*.R"/>
--            <zipfileset src="${lib}/apache-ant-1.8.2-bzip2.jar"/>
-             <manifest>
-                 <attribute name="Implementation-Version" value="${picard-version}(${repository.revision})"/>
-                 <attribute name="Implementation-Vendor" value="Broad Institute"/>
-@@ -215,6 +213,8 @@
-         </jar>
-     </target>
- 
-+    <target name="jar" depends="sam-jar, picard-jar" />
-+
-     <target name="tribble-jar" depends="compile"
-             description="Builds tribble-${tribble-version}.jar for inclusion in other projects">
-         <mkdir dir="${dist}"/>
-@@ -357,9 +357,6 @@
-     <target name="all" depends="compile, sam-jar, picard-jar, tribble-jar, variant-jar, package-commands, document-standard-options" description="Default build target">
+@@ -433,9 +421,6 @@
          <zip zipfile="${dist}/picard-tools-${picard-version}.zip">
              <zipfileset dir="${dist}" includes="*.jar" prefix="picard-tools-${picard-version}"/>
+             <zipfileset dir="${htsjdk_lib_dir}" includes="htsjdk-*.jar" prefix="picard-tools-${picard-version}"/>
 -            <zipfileset dir="${lib}" includes="snappy*.jar"/>
 -            <!-- distribute libJniDeflater.so in same directory as jarfiles-->
--            <zipfileset dir="${lib}/jni" includes="*" prefix="picard-tools-${picard-version}"/>
+-            <zipfileset dir="${htsjdk}/lib/jni" includes="*" prefix="picard-tools-${picard-version}"/>
          </zip>
      </target>
  
-@@ -478,8 +475,7 @@
-                    srcdir="${src}"
-                    includes="@{includes}"
-                    excludes="@{excludes}"
--                   source="${javac.target}"
--                   target="${javac.target}">
-+                   executable="javac">
-                 <classpath refid="@{compile.classpath}"/>
-                 <compilerarg line="@{compiler.args}" />
-                 <!-- ensure that Java 6 bootclasspath is used -->
-@@ -501,8 +497,7 @@
-                    srcdir="${src.test.java}"
-                    includes="@{includes}"
-                    excludes="@{excludes}"
--                   source="${javac.target}"
--                   target="${javac.target}">
-+                   executable="javac">
-                 <classpath>
-                     <path refid="classpath"/>
-                     <pathelement location="${classes}"/>

@@ -1,0 +1,53 @@
+Description: Modifies the upstream build system.
+ This patch enables the use of the system's java libraries instead of the
+ copies included in lib/.
+Origin: vendor
+Forwarded: no
+--- a/htsjdk/build.xml
++++ b/htsjdk/build.xml
+@@ -28,7 +28,6 @@
+     <property name="src" value="src/java"/>
+     <property name="src.test" value="src/tests"/>
+     <property name="src.test.java" value="${src.test}/java"/>
+-    <property name="lib" value="lib"/>
+     <property name="dist" value="dist"/>
+     <property name="classes" value="classes"/>
+     <property name="classes.test" value="testclasses"/>
+@@ -73,9 +72,10 @@
+     <!-- INIT -->
+     <target name="init" depends="write-version-property">
+         <path id="classpath">
+-            <fileset dir="${lib}">
+-                <include name="**/*.jar"/>
+-            </fileset>
++            <pathelement path="/usr/share/java/commons-jexl2.jar"/>
++            <pathelement path="/usr/share/java/commons-logging.jar"/>
++            <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
++            <pathelement path="/usr/share/java/testng.jar"/>
+         </path>
+     </target>
+ 
+@@ -185,9 +185,6 @@
+                 <attribute name="Implementation-Vendor" value="Broad Institute"/>
+             </manifest>
+         </jar>
+-        <copy todir="${dist}">
+-            <fileset dir="lib" includes="*.jar"/>
+-        </copy>
+     </target>
+ 
+     <target name="javadoc" depends="init" description="Generates the project javadoc.">
+@@ -204,9 +201,10 @@
+                 failonerror="true">
+             <classpath>
+                 <pathelement location="${java.home}/../lib/tools.jar" />
+-                <fileset dir="${lib}">
+-                    <include name="**/*.jar" />
+-                </fileset>
++            <pathelement path="/usr/share/java/commons-jexl2.jar"/>
++            <pathelement path="/usr/share/java/commons-logging.jar"/>
++            <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
++            <pathelement path="/usr/share/java/testng.jar"/>
+             </classpath>
+             <link href="http://java.sun.com/j2se/1.5.0/docs/api/"/>
+         </javadoc>
