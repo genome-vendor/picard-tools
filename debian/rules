@@ -12,7 +12,7 @@ override_dh_auto_configure:
 	[ -d lib ] || mkdir lib # This empty directory is lost in the packages's Git clone.
 	dh_auto_configure
 
-VERSION =	1.122
+VERSION =	1.123
 PNAME =	picard-tools
 PACKAGE =	lib$(PNAME)$(VERSION)-java
 override_dh_auto_install:
@@ -23,7 +23,7 @@ override_dh_auto_install:
 	ln -s ../picard-$(VERSION).jar debian/$(PACKAGE)/usr/share/java/$(PNAME)$(VERSION)/picard-$(VERSION).jar
 
 # Adapted from http://wiki.debian.org/SandroTosi/Svn_get-orig-source
-PACKAGE =	libpicard-tools1.122-java
+PACKAGE =	libpicard-tools1.123-java
 SRC_VERSION =	$(shell dpkg-parsechangelog | sed -ne 's/^Version: \(\([0-9]\+\):\)\?\(.*\)-.*/\3/p')
 SRC_DIR =	$(PACKAGE)-$(SRC_VERSION).orig
 TARBALL =	$(PACKAGE)_$(SRC_VERSION).orig.tar.bz2

@@ -1,3 +1,9 @@
+libpicard-tools1.123-java (1.123-1) unstable; urgency=low
+
+  * New upstream release
+
+ -- The Genome Institute <gmt@genome.wustl.edu>  Thu, 23 Oct 2014 14:33:44 -0500
+
 libpicard-tools1.122-java (1.122-1) unstable; urgency=low
 
   * New upstream release

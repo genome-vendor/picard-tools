@@ -1,4 +1,4 @@
-Source: libpicard-tools1.122-java
+Source: libpicard-tools1.123-java
 Section: science
 Priority: optional
 Maintainer: The Genome Institute <gmt@genome.wustl.edu>
@@ -10,7 +10,7 @@ Homepage: http://picard.sourceforge.net/
 Vcs-Git: git://github.com/genome-vendor/picard-tools.git
 Vcs-Browser: https://github.com/genome-vendor/picard-tools
 
-Package: libpicard-tools1.122-java
+Package: libpicard-tools1.123-java
 Architecture: all
 Depends: default-jre | java6-runtime, libcommons-jexl2-java,
  libsnappy1.0.3-java, ${misc:Depends}
