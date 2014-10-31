@@ -13,7 +13,7 @@ Vcs-Browser: https://github.com/genome-vendor/picard-tools
 Package: libpicard-tools1.123-java
 Architecture: all
 Depends: default-jre | java6-runtime, libcommons-jexl2-java,
- libsnappy1.0.3-java, ${misc:Depends}
+ ${misc:Depends}
 Recommends: libsnappy1.0.3-java
 Suggests: python, r-base-core
 Conflicts: picard-tools
