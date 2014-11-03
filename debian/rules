@@ -12,18 +12,21 @@ override_dh_auto_configure:
 	[ -d lib ] || mkdir lib # This empty directory is lost in the packages's Git clone.
 	dh_auto_configure
 
-VERSION =	1.123
+VERSION =	1.124
 PNAME =	picard-tools
 PACKAGE =	lib$(PNAME)$(VERSION)-java
+DEST =	debian/$(PACKAGE)/usr/share
+DEST_JAVA =	$(DEST)/java
+DEST_DOC =	$(DEST)/doc/$(PACKAGE)
 override_dh_auto_install:
-	mkdir -p debian/$(PACKAGE)/usr/share/java/$(PNAME)$(VERSION)/
-	mv dist/htsjdk_lib_dir/htsjdk-$(VERSION).jar dist/picard-$(VERSION).jar debian/$(PACKAGE)/usr/share/java
-	mv dist/*.jar debian/$(PACKAGE)/usr/share/java/$(PNAME)$(VERSION)/
-	ln -s ../htsjdk-$(VERSION).jar debian/$(PACKAGE)/usr/share/java/$(PNAME)$(VERSION)/htsjdk-$(VERSION).jar
-	ln -s ../picard-$(VERSION).jar debian/$(PACKAGE)/usr/share/java/$(PNAME)$(VERSION)/picard-$(VERSION).jar
+	mkdir -p $(DEST_JAVA) $(DEST_DOC)
+	mv dist/picard-lib.jar $(DEST_JAVA)/picard-lib-$(VERSION).jar
+	mv dist/picard.jar $(DEST_JAVA)/picard-$(VERSION).jar
+	mv dist/htsjdk_lib_dir/htsjdk-$(VERSION).jar $(DEST_JAVA)
+	mv dist/html $(DEST_DOC)
 
 # Adapted from http://wiki.debian.org/SandroTosi/Svn_get-orig-source
-PACKAGE =	libpicard-tools1.123-java
+PACKAGE =	libpicard-tools1.124-java
 SRC_VERSION =	$(shell dpkg-parsechangelog | sed -ne 's/^Version: \(\([0-9]\+\):\)\?\(.*\)-.*/\3/p')
 SRC_DIR =	$(PACKAGE)-$(SRC_VERSION).orig
 TARBALL =	$(PACKAGE)_$(SRC_VERSION).orig.tar.bz2

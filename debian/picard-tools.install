@@ -1,3 +1,0 @@
-debian/bin/picard-tools usr/bin
-dist/sam-*.jar usr/share/java
-dist/picard-*.jar usr/share/java

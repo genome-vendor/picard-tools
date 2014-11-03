@@ -1,4 +1,4 @@
-Source: libpicard-tools1.123-java
+Source: libpicard-tools1.124-java
 Section: science
 Priority: optional
 Maintainer: The Genome Institute <gmt@genome.wustl.edu>
@@ -6,11 +6,11 @@ Uploaders: Ian Ferguson <iferguso@genome.wustl.edu>
 Build-Depends: ant, debhelper (>= 7.0.50~), default-jdk, git-core, libbcel-java,
  libcommons-jexl2-java, libsnappy-dev, libsnappy1, libsnappy1.0.3-java, testng
 Standards-Version: 3.9.3
-Homepage: http://picard.sourceforge.net/
+Homepage: http://broadinstitute.github.io/picard/
 Vcs-Git: git://github.com/genome-vendor/picard-tools.git
 Vcs-Browser: https://github.com/genome-vendor/picard-tools
 
-Package: libpicard-tools1.123-java
+Package: libpicard-tools1.124-java
 Architecture: all
 Depends: default-jre | java6-runtime, libcommons-jexl2-java,
  ${misc:Depends}

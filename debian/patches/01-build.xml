@@ -36,7 +36,7 @@ Forwarded: no
          </path>
          <path id="metrics.classpath">
              <pathelement path="${classpath}"/>
-@@ -138,7 +133,6 @@
+@@ -137,7 +132,6 @@
          <ant antfile="build.xml" dir="${htsjdk}" target="all" inheritall="false"/>
          <copy todir="${htsjdk_lib_dir}">
              <fileset dir="${htsjdk}/dist" includes="**/*-*.jar"/>
@@ -44,7 +44,25 @@ Forwarded: no
          </copy>
          <copy todir="${dist}">
              <fileset dir="${htsjdk}/dist" includes="**/*.jar" excludes="**/*-*.jar"/>
-@@ -267,15 +261,13 @@
+@@ -246,17 +240,10 @@
+             <fileset dir="${classes}" includes="picard/**/*.*, META-INF/**/*"/>
+             <fileset dir="${src.scripts}" includes="**/*.R"/>
+             <fileset dir="${htsjdk-classes}" includes ="${htsjdk}/*/**/*.*"/>
+-            <fileset dir="${lib}">
+-                <include name="**/*.jar"/>
+-            </fileset>
+             <fileset dir="${htsjdk_lib_dir}">
+                 <include name="*.jar"/>
+                 <include name="**/*.jar"/>
+             </fileset>
+-            <fileset dir="${htsjdk}/lib">
+-                <include name="*.jar"/>
+-                <include name="**/*.jar"/>
+-            </fileset>
+             <manifest>
+                 <attribute name="Implementation-Version" value="${picard-version}(${repository.revision})"/>
+                 <attribute name="Implementation-Vendor" value="Broad Institute"/>
+@@ -295,15 +282,13 @@
                  excludepackagenames="htsjdk*">
              <classpath>
                  <pathelement location="${java.home}/../lib/tools.jar"/>
@@ -64,7 +82,7 @@ Forwarded: no
              </classpath>
              <link href="http://java.sun.com/j2se/1.6.0/docs/api/"/>
              <fileset dir="${src}" defaultexcludes="yes">
-@@ -295,12 +287,10 @@
+@@ -323,12 +308,10 @@
                  excludepackagenames="picard*">
              <classpath>
                  <pathelement location="${java.home}/../lib/tools.jar"/>
@@ -81,31 +99,17 @@ Forwarded: no
              </classpath>
              <link href="http://java.sun.com/j2se/1.6.0/docs/api/"/>
              <fileset dir="${htsjdk_src}" defaultexcludes="yes">
-@@ -314,9 +304,10 @@
+@@ -342,9 +325,6 @@
                   failonerror="true" verbose="true">
              <classpath>
                  <pathelement location="${java.home}/../lib/tools.jar"/>
 -                <fileset dir="${lib}">
 -                    <include name="**/*.jar"/>
 -                </fileset>
-+                <pathelement path="/usr/share/java/commons-jexl2.jar"/>
-+                <pathelement path="/usr/share/java/commons-logging.jar"/>
-+                <pathelement path="/usr/share/java/snappy1.0.3-java.jar"/>
-+                <pathelement path="/usr/share/java/testng.jar"/>
                  <fileset dir="${htsjdk}/dist">
                      <include name="**/*.jar"/>
                  </fileset>
-@@ -341,9 +332,6 @@
-             <fileset dir="${htsjdk_lib_dir}">
-                 <include name="*.jar"/>
-             </fileset>
--            <fileset dir="${lib}">
--                <include name="*.jar"/>
--            </fileset>
-         </unzip>
-         <delete dir="${command-line-html-dir}"/>
- 
-@@ -433,9 +421,6 @@
+@@ -426,9 +406,6 @@
          <zip zipfile="${dist}/picard-tools-${picard-version}.zip">
              <zipfileset dir="${dist}" includes="*.jar" prefix="picard-tools-${picard-version}"/>
              <zipfileset dir="${htsjdk_lib_dir}" includes="htsjdk-*.jar" prefix="picard-tools-${picard-version}"/>
