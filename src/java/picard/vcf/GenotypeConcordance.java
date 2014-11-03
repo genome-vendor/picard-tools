@@ -36,11 +36,11 @@ import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.variantcontext.VariantContextComparator;
 import htsjdk.variant.vcf.VCFFileReader;
 import picard.PicardException;
-import picard.cmdline.CommandLineParser;
 import picard.cmdline.CommandLineProgram;
+import picard.cmdline.CommandLineProgramProperties;
 import picard.cmdline.Option;
 import picard.cmdline.StandardOptionDefinitions;
-import picard.cmdline.Usage;
+import picard.cmdline.programgroups.VcfOrBcf;
 import picard.vcf.GenotypeConcordanceStates.*;
 
 import java.io.File;
@@ -60,15 +60,15 @@ import static htsjdk.variant.variantcontext.VariantContext.Type.*;
  * @author Tim Fennell
  * @author George Grant
  */
+@CommandLineProgramProperties(
+        usage = "Calculates the concordance between genotype data for two samples in two different VCFs - one being considered the truth (or reference) " +
+                "the other being considered the call.  The concordance is broken into separate results sections for SNPs and indels.  Summary and detailed statistics are reported\n\n" +
+                "Note that for any pair of variants to compare, only the alleles for the samples under interrogation are considered " +
+                "and MNP, Symbolic, and Mixed classes of variants are not included.",
+        usageShort = "Calculates the concordance between genotype data for two samples in two different VCFs",
+        programGroup = VcfOrBcf.class
+)
 public class GenotypeConcordance extends CommandLineProgram {
-    @Usage
-    public final String USAGE =
-            CommandLineParser.getStandardUsagePreamble(getClass()) +
-                    "Calculates the concordance between genotype data for two samples in two different VCFs - one being considered the truth (or reference) " +
-                    "the other being considered the call.  The concordance is broken into separate results sections for SNPs and indels.  Summary and detailed statistics are reported\n\n" +
-                    "Note that for any pair of variants to compare, only the alleles for the samples under interrogation are considered " +
-                    "and MNP, Symbolic, and Mixed classes of variants are not included.";
-
     @Option(shortName = "TV", doc="The VCF containing the truth sample")
     public File TRUTH_VCF;
 
@@ -108,6 +108,7 @@ public class GenotypeConcordance extends CommandLineProgram {
 
     public static final String SUMMARY_METRICS_FILE_EXTENSION = ".genotype_concordance_summary_metrics";
     public static final String DETAILED_METRICS_FILE_EXTENSION = ".genotype_concordance_detail_metrics";
+    public static final String CONTINGENCY_METRICS_FILE_EXTENSION = ".genotype_concordance_contingency_metrics";
 
     protected GenotypeConcordanceCounts snpCounter;
     public GenotypeConcordanceCounts getSnpCounter() { return snpCounter; }
@@ -128,8 +129,10 @@ public class GenotypeConcordance extends CommandLineProgram {
         IOUtil.assertFileIsReadable(CALL_VCF);
         final File summaryMetricsFile = new File(OUTPUT + SUMMARY_METRICS_FILE_EXTENSION);
         final File detailedMetricsFile = new File(OUTPUT + DETAILED_METRICS_FILE_EXTENSION);
+        final File contingencyMetricsFile = new File(OUTPUT + CONTINGENCY_METRICS_FILE_EXTENSION);
         IOUtil.assertFileIsWritable(summaryMetricsFile);
         IOUtil.assertFileIsWritable(detailedMetricsFile);
+        IOUtil.assertFileIsWritable(contingencyMetricsFile);
 
         final boolean usingIntervals = this.INTERVALS != null && this.INTERVALS.size() > 0;
         IntervalList intervals = null;
@@ -265,6 +268,14 @@ public class GenotypeConcordance extends CommandLineProgram {
         outputDetailMetricsFile(INDEL, genotypeConcordanceDetailMetrics, indelCounter, TRUTH_SAMPLE, CALL_SAMPLE);
         genotypeConcordanceDetailMetrics.write(detailedMetricsFile);
 
+        // Calculate and score the contingency metrics
+        final MetricsFile<GenotypeConcordanceContingencyMetrics,?> genotypeConcordanceContingencyMetricsFile = getMetricsFile();
+        GenotypeConcordanceContingencyMetrics contingencyMetrics = new GenotypeConcordanceContingencyMetrics(SNP, snpCounter, TRUTH_SAMPLE, CALL_SAMPLE);
+        genotypeConcordanceContingencyMetricsFile.addMetric(contingencyMetrics);
+        contingencyMetrics = new GenotypeConcordanceContingencyMetrics(INDEL, indelCounter, TRUTH_SAMPLE, CALL_SAMPLE);
+        genotypeConcordanceContingencyMetricsFile.addMetric(contingencyMetrics);
+        genotypeConcordanceContingencyMetricsFile.write(contingencyMetricsFile);
+
         for (final String condition : unClassifiedStatesMap.keySet()) {
             log.info("Uncovered truth/call Variant Context Type Counts: " + condition + " " + unClassifiedStatesMap.get(condition));
         }
@@ -277,9 +288,11 @@ public class GenotypeConcordance extends CommandLineProgram {
     **/
     private void outputDetailMetricsFile(final VariantContext.Type variantType, final MetricsFile<GenotypeConcordanceDetailMetrics,?> genotypeConcordanceDetailMetricsFile,
                                          final GenotypeConcordanceCounts counter, final String truthSampleName, final String callSampleName) {
+        final GenotypeConcordanceScheme scheme = new GenotypeConcordanceScheme();
         for (final TruthState truthState : TruthState.values()) {
             for (final CallState callState : CallState.values()) {
                 final int count = counter.getCount(truthState, callState);
+                final String contingencyValues = scheme.getContingencyStateString(truthState, callState);
                 if (count > 0 || OUTPUT_ALL_ROWS) {
                     final GenotypeConcordanceDetailMetrics detailMetrics = new GenotypeConcordanceDetailMetrics();
                     detailMetrics.VARIANT_TYPE = variantType;
@@ -288,6 +301,7 @@ public class GenotypeConcordance extends CommandLineProgram {
                     detailMetrics.TRUTH_STATE = truthState;
                     detailMetrics.CALL_STATE = callState;
                     detailMetrics.COUNT = count;
+                    detailMetrics.CONTINGENCY_VALUES = contingencyValues;
                     genotypeConcordanceDetailMetricsFile.addMetric(detailMetrics);
                 }
             }
